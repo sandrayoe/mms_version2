@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useBluetooth } from "./BluetoothContext";
 import BluetoothControl from "./BluetoothControl";
 import styles from "./NMESControl.module.css";
-import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend } from "recharts";
+import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine } from "recharts";
 
 const SensorPanel: React.FC = () => {
   const { isConnected, imuData, startIMU, stopIMU, clearIMU } = useBluetooth();
@@ -54,6 +54,8 @@ const SensorPanel: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const recordedRef = useRef<{ sensor1: { time: number; sensorValue: number }[]; sensor2: { time: number; sensorValue: number }[] }>({ sensor1: [], sensor2: [] });
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
+  type Marker = { time: number; type: "start" | "stop" };
+  const [markers, setMarkers] = useState<Marker[]>([]);
   // diagnostics removed from UI; use BIN_MS to control displayed smoothing
   // Diagnostics for timing and sample indexing
   const lastTickWallClockRef = useRef<number | null>(null);
@@ -269,6 +271,8 @@ const SensorPanel: React.FC = () => {
     sessionStartRef.current = null;
     setIsMeasuring(true);
     startIMU();
+    // clear markers when starting a fresh measurement
+    setMarkers([]);
   };
 
   const handleStopIMU = () => {
@@ -280,23 +284,44 @@ const SensorPanel: React.FC = () => {
   const handleStartRecording = () => {
     recordedRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(true);
+    // add a start marker at the current chart time (fallback to 0)
+    const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
+    setMarkers((prev) => [...prev, { time: latestTime, type: "start" }]);
   };
 
   const handleStopRecording = () => {
     setIsRecording(false);
+    // add a stop marker at the current chart time (fallback to 0)
+    const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
+    setMarkers((prev) => [...prev, { time: latestTime, type: "stop" }]);
   };
 
   const handleSaveRecording = () => {
-    const payload = {
-      sensor1: recordedRef.current.sensor1,
-      sensor2: recordedRef.current.sensor2,
-      savedAt: new Date().toISOString(),
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    // Merge sensor1 and sensor2 by time and produce CSV with headers: time,sensor1,sensor2
+    const s1 = recordedRef.current.sensor1 ?? [];
+    const s2 = recordedRef.current.sensor2 ?? [];
+    // Collect all times (union) and sort
+    const timesSet = new Set<number>();
+    s1.forEach(p => timesSet.add(p.time));
+    s2.forEach(p => timesSet.add(p.time));
+    const times = Array.from(timesSet).sort((a,b) => a - b);
+
+    // Create maps time->value for quick lookup
+    const map1 = new Map(s1.map(p => [p.time, p.sensorValue] as [number, number]));
+    const map2 = new Map(s2.map(p => [p.time, p.sensorValue] as [number, number]));
+
+    let csv = 'time,sensor1,sensor2\n';
+    for (const t of times) {
+      const v1 = map1.has(t) ? String(map1.get(t)) : '';
+      const v2 = map2.has(t) ? String(map2.get(t)) : '';
+      csv += `${t},${v1},${v2}\n`;
+    }
+
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const a = document.createElement('a');
     a.href = url;
-    a.download = `mms_recording_${new Date().toISOString()}.json`;
+    a.download = `mms_recording_${new Date().toISOString()}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -360,6 +385,9 @@ const SensorPanel: React.FC = () => {
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
                     <Legend />
                     <Line type="linear" dataKey="sensorValue" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
+                      {markers.map((m, i) => (
+                        <ReferenceLine key={`m1-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
+                      ))}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -379,6 +407,9 @@ const SensorPanel: React.FC = () => {
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
                     <Legend />
                     <Line type="linear" dataKey="sensorValue" stroke="#82ca9d" strokeWidth={2} name="Sensor 2" dot={false} isAnimationActive={false} />
+                    {markers.map((m, i) => (
+                      <ReferenceLine key={`m2-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
+                    ))}
                   </LineChart>
                 </ResponsiveContainer>
             </div>
