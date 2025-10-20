@@ -112,34 +112,63 @@
 }
 
 .rightPanel {
-  flex: 2;
+  flex: 2 1 0;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  max-width: 700px;
+  max-width: none; /* allow wide charts */
 }
 
 .chartContainer {
   background: #fff;
-  padding: 0.5rem;
+  padding: 0.75rem 1rem;
   border-radius: 4px;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* center the responsive chart */
 }
 
 .topContainer {
   display: flex;
   justify-content: start;
-  align-items: center;
+  align-items: stretch; /* Ensure children stretch to same height */
   gap: 1.5rem;
   margin-bottom: 1rem;
 }
 
+/* New shared card style for control items (connect and sensor control) */
+.controlCard {
+  background: #f3f4f6;
+  padding: 1.25rem 1.5rem; /* more inner spacing */
+  border-radius: 0.6rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex: 0 0 340px; /* slightly wider */
+  min-height: 140px; /* larger height for breathing room */
+}
+
 .controlBox {
   background: #f3f4f6;
-  padding: 1rem;
-  border-radius: 0.5rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  padding: 1.25rem 1.5rem; /* match controlCard */
+  border-radius: 0.6rem;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex: 0 0 340px;
+  min-height: 140px;
+}
+
+.controlCard h3,
+.controlBox h3 {
+  margin: 0 0 12px 0; /* space between heading and buttons */
+  font-size: 1.05rem;
 }
 
 .inputGroup {

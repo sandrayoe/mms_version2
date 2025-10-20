@@ -1,6 +1,8 @@
+"use client";
+
 import React, { useEffect } from 'react';
 import { useBluetooth } from './BluetoothContext';  
-import styles from './NMESControlPanel.module.css';
+import styles from './NMESControl.module.css';
 
 export const BluetoothControl: React.FC = () => {
   const { connect, disconnect, isConnected } = useBluetooth(); 
