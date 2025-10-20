@@ -1,6 +1,9 @@
 # mms_version2
 Low-level version of MMS website interface (fewer features, less disruptions.)
 
+This is just for sensor readings, record, and then download the .csv file.
+
+{##CANCELED## - but kept for notes}
 Needs: 
 1. Check the commands from the superelectrodes (fix? electrode 1?)
 2. Download from both flex sensors (with the labels; csv)
