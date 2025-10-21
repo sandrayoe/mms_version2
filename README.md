@@ -9,7 +9,8 @@ This is just for sensor readings, record, and then download the .csv file.
     b. Smoother: smoothed every bin of 20ms
     c. Window width: 200 samples
     d. Assumed sample rate 50 Hz (interval 20ms)
-2. Recorded csv: time,sensor1,sensor2
+2. Recording: start (marked by dotted green line); stop (dotted red line)
+3. Recorded csv: time,sensor1,sensor2
 
 
 
