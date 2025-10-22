@@ -197,6 +197,12 @@
   color: #222;
 }
 
+.labelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .textInput {
   background: #ffffff;
   border: 1px solid #e0e0e0;

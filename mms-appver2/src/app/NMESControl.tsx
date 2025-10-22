@@ -373,18 +373,17 @@ const SensorPanel: React.FC = () => {
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
               <label className={styles.inputLabel}>
-                Patient name:<span className={styles.requiredAsterisk}>*</span>
+                <span className={styles.labelRow}>Patient name:<span className={styles.requiredAsterisk}>*</span></span>
                 <input className={styles.textInput} value={patientName} onChange={(e) => setPatientName(e.target.value)} />
               </label>
-              {/* explanatory note removed per request */}
 
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  Frequency (Hz):<span className={styles.requiredAsterisk}>*</span>
+                  <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => setFrequency(e.target.value)} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  Level:<span className={styles.requiredAsterisk}>*</span>
+                  <span className={styles.labelRow}>Level:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
                 </label>
               </div>
