@@ -14,7 +14,7 @@ const SensorPanel: React.FC = () => {
   // Number of samples to keep in the displayed chart window (most recent samples)
   const CHART_WINDOW_SIZE = 200;
   // Fixed Y axis maximum for better visual comparison and less jittering
-  const CHART_Y_MAX = 400;
+  const CHART_Y_MAX = 250;
 
   // Bin width in milliseconds for simple time-binning/averaging of incoming samples.
   // Set to 0 to disable binning and keep raw samples. Typical useful values: 5-20 ms.
