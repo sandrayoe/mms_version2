@@ -376,17 +376,15 @@ const SensorPanel: React.FC = () => {
                 Patient name:<span className={styles.requiredAsterisk}>*</span>
                 <input className={styles.textInput} value={patientName} onChange={(e) => setPatientName(e.target.value)} />
               </label>
-              <div className={styles.requiredNote}>
-                <strong>*</strong> Patient name is recommended. If left empty, you'll get a confirmation before saving.
-              </div>
+              {/* explanatory note removed per request */}
 
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  Frequency (Hz):
+                  Frequency (Hz):<span className={styles.requiredAsterisk}>*</span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => setFrequency(e.target.value)} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  Level:
+                  Level:<span className={styles.requiredAsterisk}>*</span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
                 </label>
               </div>
@@ -407,9 +405,14 @@ const SensorPanel: React.FC = () => {
               <button
                 className={styles.button}
                 onClick={() => {
-                  // If patient name empty, ask for confirmation before saving
-                  if (!patientName || patientName.trim() === '') {
-                    const ok = window.confirm('Patient name is empty. Are you sure you want to save the recording without a patient name?');
+                  const emptyFields: string[] = [];
+                  if (!patientName || patientName.trim() === '') emptyFields.push('Patient name');
+                  if (!frequency || frequency.trim() === '') emptyFields.push('Frequency');
+                  if (!level || level.trim() === '') emptyFields.push('Level');
+
+                  if (emptyFields.length) {
+                    const list = emptyFields.join(', ');
+                    const ok = window.confirm(`The following fields are empty: ${list}. Are you sure you want to save?`);
                     if (!ok) return;
                   }
                   handleSaveRecording();
