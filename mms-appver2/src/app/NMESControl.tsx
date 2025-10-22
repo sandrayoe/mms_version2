@@ -373,9 +373,12 @@ const SensorPanel: React.FC = () => {
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
               <label className={styles.inputLabel}>
-                Patient name:
+                Patient name:<span className={styles.requiredAsterisk}>*</span>
                 <input className={styles.textInput} value={patientName} onChange={(e) => setPatientName(e.target.value)} />
               </label>
+              <div className={styles.requiredNote}>
+                <strong>*</strong> Patient name is recommended. If left empty, you'll get a confirmation before saving.
+              </div>
 
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
@@ -401,7 +404,18 @@ const SensorPanel: React.FC = () => {
               <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
                 Stop Recording
               </button>
-              <button className={styles.button} onClick={handleSaveRecording} disabled={isRecording || (recordedRef.current.sensor1.length===0 && recordedRef.current.sensor2.length===0)}>
+              <button
+                className={styles.button}
+                onClick={() => {
+                  // If patient name empty, ask for confirmation before saving
+                  if (!patientName || patientName.trim() === '') {
+                    const ok = window.confirm('Patient name is empty. Are you sure you want to save the recording without a patient name?');
+                    if (!ok) return;
+                  }
+                  handleSaveRecording();
+                }}
+                disabled={isRecording || (recordedRef.current.sensor1.length===0 && recordedRef.current.sensor2.length===0)}
+              >
                 Save Recording
               </button>
             </div>

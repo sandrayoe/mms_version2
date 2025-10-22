@@ -212,3 +212,15 @@
   width: 120px; /* used for frequency/level to keep compact */
 }
 
+.requiredAsterisk {
+  color: #d9534f; /* red */
+  margin-left: 6px;
+}
+
+.requiredNote {
+  font-size: 0.85rem;
+  color: #555;
+  margin-top: 6px;
+  text-align: left;
+}
+
