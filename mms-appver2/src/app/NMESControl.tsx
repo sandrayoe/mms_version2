@@ -56,6 +56,11 @@ const SensorPanel: React.FC = () => {
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   type Marker = { time: number; type: "start" | "stop" };
   const [markers, setMarkers] = useState<Marker[]>([]);
+
+  // User inputs for file naming
+  const [patientName, setPatientName] = useState<string>("");
+  const [frequency, setFrequency] = useState<string>("");
+  const [level, setLevel] = useState<string>("");
   // diagnostics removed from UI; use BIN_MS to control displayed smoothing
   // Diagnostics for timing and sample indexing
   const lastTickWallClockRef = useRef<number | null>(null);
@@ -317,11 +322,28 @@ const SensorPanel: React.FC = () => {
       csv += `${t},${v1},${v2}\n`;
     }
 
+    // Append markers section so time markers are preserved in the recording file
+    if (markers && markers.length) {
+      csv += '\nmarkers,type,time\n';
+      for (const m of markers) {
+        csv += `${m.type},${m.type},${m.time}\n`;
+      }
+    }
+
+    // Helper to sanitize parts for filenames
+    const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
+
+    const patientPart = patientName ? sanitize(patientName) : 'unknown';
+    const freqPart = frequency ? `${sanitize(frequency)}Hz` : 'freqNA';
+    const levelPart = level ? `${sanitize(level)}` : 'levelNA';
+
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mms_recording_${new Date().toISOString()}.csv`;
+    // Build user-friendly filename including provided inputs, keep ISO timestamp to ensure uniqueness
+    const iso = new Date().toISOString().replace(/[:]/g, '-');
+    a.download = `mms_${patientPart}_${freqPart}_${levelPart}_${iso}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -346,6 +368,20 @@ const SensorPanel: React.FC = () => {
         {isConnected && (
           <div className={styles.controlBox}>
             <h3>Sensor Control</h3>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ display: 'block', marginBottom: 6 }}>
+                Patient name:
+                <input value={patientName} onChange={(e) => setPatientName(e.target.value)} style={{ marginLeft: 8 }} />
+              </label>
+              <label style={{ display: 'block', marginBottom: 6 }}>
+                Frequency (Hz):
+                <input value={frequency} onChange={(e) => setFrequency(e.target.value)} style={{ marginLeft: 8, width: 80 }} />
+              </label>
+              <label style={{ display: 'block', marginBottom: 6 }}>
+                Level:
+                <input value={level} onChange={(e) => setLevel(e.target.value)} style={{ marginLeft: 8, width: 80 }} />
+              </label>
+            </div>
             <div className={styles.buttonContainer}>
               <button className={styles.button} onClick={handleStartIMU} disabled={!isConnected || isMeasuring}>
                 Start Sensor(s)
