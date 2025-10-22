@@ -341,9 +341,12 @@ const SensorPanel: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    // Build user-friendly filename including provided inputs, keep ISO timestamp to ensure uniqueness
-    const iso = new Date().toISOString().replace(/[:]/g, '-');
-    a.download = `mms_${patientPart}_${freqPart}_${levelPart}_${iso}.csv`;
+  // Build user-friendly filename including provided inputs, use compact numeric timestamp (no Z, no colons)
+  // Example: 2025-10-22T19-10-31-544
+  const d = new Date();
+  const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+  const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`;
+  a.download = `mms_${patientPart}_${freqPart}_${levelPart}_${iso}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
