@@ -368,19 +368,22 @@ const SensorPanel: React.FC = () => {
         {isConnected && (
           <div className={styles.controlBox}>
             <h3>Sensor Control</h3>
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ display: 'block', marginBottom: 6 }}>
+            <div className={styles.inputsBlock}>
+              <label className={styles.inputLabel}>
                 Patient name:
-                <input value={patientName} onChange={(e) => setPatientName(e.target.value)} style={{ marginLeft: 8 }} />
+                <input className={styles.textInput} value={patientName} onChange={(e) => setPatientName(e.target.value)} />
               </label>
-              <label style={{ display: 'block', marginBottom: 6 }}>
-                Frequency (Hz):
-                <input value={frequency} onChange={(e) => setFrequency(e.target.value)} style={{ marginLeft: 8, width: 80 }} />
-              </label>
-              <label style={{ display: 'block', marginBottom: 6 }}>
-                Level:
-                <input value={level} onChange={(e) => setLevel(e.target.value)} style={{ marginLeft: 8, width: 80 }} />
-              </label>
+
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  Frequency (Hz):
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => setFrequency(e.target.value)} />
+                </label>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  Level:
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
+                </label>
+              </div>
             </div>
             <div className={styles.buttonContainer}>
               <button className={styles.button} onClick={handleStartIMU} disabled={!isConnected || isMeasuring}>

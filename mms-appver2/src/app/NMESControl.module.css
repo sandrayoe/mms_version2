@@ -178,3 +178,37 @@
   margin-bottom: 20px; /* ✅ Adds spacing before the Start Optimization button */
 }
 
+/* Inputs block inside the control box */
+.inputsBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px; /* keep inputs nicely contained */
+  align-items: stretch; /* make inputs full-width within the block */
+  margin-bottom: 12px;
+}
+
+.inputLabel {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.95rem;
+  text-align: left;
+  color: #222;
+}
+
+.textInput {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-top: 6px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.smallInput {
+  width: 120px; /* used for frequency/level to keep compact */
+}
+
