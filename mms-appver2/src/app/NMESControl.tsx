@@ -471,7 +471,7 @@ const SensorPanel: React.FC = () => {
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => setFrequency(e.target.value)} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>Level:<span className={styles.requiredAsterisk}>*</span></span>
+                  <span className={styles.labelRow}>Level:</span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
                 </label>
               </div>
@@ -487,21 +487,21 @@ const SensorPanel: React.FC = () => {
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>Position:</span>
+                  <span className={styles.labelRow}>Position:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={position} onChange={(e) => setPosition(e.target.value)} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>PVV1:</span>
+                  <span className={styles.labelRow}>PVV1:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv1} onChange={(e) => setPvv1(e.target.value)} />
                 </label>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>PVV2:</span>
+                  <span className={styles.labelRow}>PVV2:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv2} onChange={(e) => setPvv2(e.target.value)} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>PVV3:</span>
+                  <span className={styles.labelRow}>PVV3:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => setPvv3(e.target.value)} />
                 </label>
               </div>
@@ -525,6 +525,10 @@ const SensorPanel: React.FC = () => {
                   const emptyFields: string[] = [];
                   if (!frequency || frequency.trim() === '') emptyFields.push('Frequency');
                   if (!motorPoints || motorPoints.trim() === '') emptyFields.push('Motor points');
+                  if (!position || position.trim() === '') emptyFields.push('Position');
+                  if (!pvv1 || pvv1.trim() === '') emptyFields.push('PVV1');
+                  if (!pvv2 || pvv2.trim() === '') emptyFields.push('PVV2');
+                  if (!pvv3 || pvv3.trim() === '') emptyFields.push('PVV3');
 
                   if (emptyFields.length) {
                     const list = emptyFields.join(', ');
