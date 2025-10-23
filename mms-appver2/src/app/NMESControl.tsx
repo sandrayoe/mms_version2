@@ -132,7 +132,27 @@ const SensorPanel: React.FC = () => {
       return;
     }
 
-    const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
+    // Determine the latest recording time. Prefer the actual recorded data timestamps
+    // (recordedRef) so snapshots align with what is written to CSV. Fall back to the
+    // displayed sensor arrays if the recorded buffers are not yet populated.
+    let latestTime = 0;
+    try {
+      const rec1 = recordedRef.current.sensor1;
+      const rec2 = recordedRef.current.sensor2;
+      if (rec1 && rec1.length) {
+        latestTime = rec1[rec1.length - 1].time;
+      } else if (rec2 && rec2.length) {
+        latestTime = rec2[rec2.length - 1].time;
+      } else if (sensor1Data.length) {
+        latestTime = sensor1Data[sensor1Data.length - 1].time;
+      } else if (sensor2Data.length) {
+        latestTime = sensor2Data[sensor2Data.length - 1].time;
+      } else {
+        latestTime = 0;
+      }
+    } catch (e) {
+      latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
+    }
     const ok = window.confirm('Apply current parameters to the recording at current time?');
     if (!ok) return;
     pushParamSnapshot(latestTime, {
