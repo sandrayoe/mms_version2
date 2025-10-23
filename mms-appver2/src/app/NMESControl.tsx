@@ -498,14 +498,26 @@ const SensorPanel: React.FC = () => {
               {/* Patient name removed - using parameter fields instead */}
 
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>Level:</span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
-                </label>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1 }}>
+                  <label className={styles.inputLabel} style={{ flex: 1 }}>
+                    <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
+                  </label>
+                  <label className={styles.inputLabel} style={{ flex: 1 }}>
+                    <span className={styles.labelRow}>Level:</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center' }} className={styles.modifyArea}>
+                  <button className={styles.button} onClick={handleApplyModify} disabled={!isConnected}>
+                    Input Parameters
+                  </button>
+                  <div style={{ marginLeft: 10 }} aria-live="polite">
+                    {showApplied && lastAppliedTime !== null && (
+                      <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
+                    )}
+                  </div>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
@@ -537,16 +549,7 @@ const SensorPanel: React.FC = () => {
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => { setPvv3(e.target.value); setParamsSubmitted(false); }} />
                 </label>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }} className={styles.modifyArea}>
-                <button className={styles.button} onClick={handleApplyModify} disabled={!isConnected}>
-                  Input Parameters
-                </button>
-                <div style={{ marginLeft: 10 }} aria-live="polite">
-                  {showApplied && lastAppliedTime !== null && (
-                    <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
-                  )}
-                </div>
-              </div>
+              
             </div>
             <div className={styles.buttonContainer}>
               <button className={styles.button} onClick={handleStartIMU} disabled={!isConnected || isMeasuring}>
