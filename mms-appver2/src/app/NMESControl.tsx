@@ -82,10 +82,27 @@ const SensorPanel: React.FC = () => {
     arr.push({ time, params });
   };
 
-  // Auto-capture snapshots when parameter inputs change while recording
-  useEffect(() => {
-    if (!isRecording) return;
+  // Manual snapshot application: user presses "Modify" to record parameter changes into snapshots
+  const handleApplyModify = () => {
+    if (!isRecording) {
+      // If not recording, still record snapshot at time 0 so future saves may use it
+      const t = 0;
+      pushParamSnapshot(t, {
+        frequency: frequency || 'N/A',
+        level: level || 'N/A',
+        intensity: intensity || 'N/A',
+        motorPoints: motorPoints || 'N/A',
+        position: position || 'N/A',
+        pvv1: pvv1 || 'N/A',
+        pvv2: pvv2 || 'N/A',
+        pvv3: pvv3 || 'N/A',
+      });
+      window.alert('Parameter snapshot captured (not recording).');
+      return;
+    }
     const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
+    const ok = window.confirm('Apply current parameters to the recording at current time?');
+    if (!ok) return;
     pushParamSnapshot(latestTime, {
       frequency: frequency || 'N/A',
       level: level || 'N/A',
@@ -96,7 +113,7 @@ const SensorPanel: React.FC = () => {
       pvv2: pvv2 || 'N/A',
       pvv3: pvv3 || 'N/A',
     });
-  }, [frequency, level, intensity, motorPoints, position, pvv1, pvv2, pvv3]);
+  };
   // diagnostics removed from UI; use BIN_MS to control displayed smoothing
   // Diagnostics for timing and sample indexing
   const lastTickWallClockRef = useRef<number | null>(null);
@@ -518,6 +535,9 @@ const SensorPanel: React.FC = () => {
               </button>
               <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
                 Stop Recording
+              </button>
+              <button className={styles.button} onClick={handleApplyModify} disabled={!isConnected}>
+                Modify (apply params)
               </button>
               <button
                 className={styles.button}
