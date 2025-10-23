@@ -4,7 +4,7 @@
   align-items: center;
   gap: 1.5rem;
   width: 100%;
-  max-width: 900px; /* Ensures content stays within a reasonable width */
+  max-width: none; /* allow full browser width */
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
@@ -98,8 +98,8 @@
   justify-content: space-between;
   align-items: flex-start; /* Aligns content from the top */
   width: 100%;
-  max-width: 1200px;
-  margin: auto;
+  max-width: none;
+  margin: 0 auto;
   gap: 2rem; /* Adds spacing between left and right sections */
 }
 
@@ -112,7 +112,7 @@
 }
 
 .rightPanel {
-  flex: 2 1 0;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -128,6 +128,13 @@
   display: flex;
   flex-direction: column;
   align-items: center; /* center the responsive chart */
+}
+
+.chartsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  width: 100%;
 }
 
 .topContainer {
