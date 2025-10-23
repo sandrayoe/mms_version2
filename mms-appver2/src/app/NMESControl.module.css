@@ -249,6 +249,53 @@
   border-radius: 6px;
 }
 
+/* container for patient/sensor inputs placed to the right of the main control buttons */
+.saveParamsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 16px;
+  min-width: 200px;
+  align-items: flex-start;
+}
+
+/* layout for the controls row: main control buttons on the left, save group on the right */
+.controlsRow {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.saveGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+/* right-side gray panel for save metadata */
+.savePanel {
+  background: #f3f4f6;
+  padding: 1rem;
+  border-radius: 0.6rem;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 260px;
+  margin-left: 1.25rem;
+}
+
+.saveError {
+  color: #b00020; /* red */
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
 /* place a control into the middle column and vertically span rows 2-3 (central area) */
 .buttonMidCell {
   /* Ensure any legacy usage of this helper moves a control into the right column

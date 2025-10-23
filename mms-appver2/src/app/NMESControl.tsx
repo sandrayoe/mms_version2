@@ -67,6 +67,9 @@ const SensorPanel: React.FC = () => {
   const [pvv2, setPvv2] = useState<string>("");
   const [pvv3, setPvv3] = useState<string>("");
   const [modifyMode, setModifyMode] = useState<boolean>(false);
+  // New inputs for saving metadata
+  const [patientName, setPatientName] = useState<string>("");
+  const [sensorName, setSensorName] = useState<string>("");
   // whether the user has submitted input parameters (required fields) before recording
   const [paramsSubmitted, setParamsSubmitted] = useState<boolean>(false);
   // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
@@ -90,6 +93,23 @@ const SensorPanel: React.FC = () => {
 
   // Manual snapshot application: user presses "Modify" to record parameter changes into snapshots
   const handleApplyModify = () => {
+    // Validate required fields before applying
+    const requiredChecks: Array<{ key: string; label: string; value: string }> = [
+      { key: 'frequency', label: 'Frequency', value: frequency },
+      { key: 'motorPoints', label: 'Motor points', value: motorPoints },
+      { key: 'position', label: 'Position', value: position },
+      { key: 'pvv1', label: 'PVV1', value: pvv1 },
+      { key: 'pvv2', label: 'PVV2', value: pvv2 },
+      { key: 'pvv3', label: 'PVV3', value: pvv3 },
+    ];
+
+    const missing = requiredChecks.filter((r) => !r.value || r.value.trim() === '').map((r) => r.label);
+    if (missing.length) {
+      // show a clear alert and avoid saving
+      window.alert(`Please fill the required fields before applying: ${missing.join(', ')}`);
+      return;
+    }
+
     if (!isRecording) {
       // If not recording, still record snapshot at time 0 so future saves may use it
       const t = 0;
@@ -111,8 +131,9 @@ const SensorPanel: React.FC = () => {
       window.alert('Input parameters saved.');
       return;
     }
+
     const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
-  const ok = window.confirm('Apply current parameters to the recording at current time?');
+    const ok = window.confirm('Apply current parameters to the recording at current time?');
     if (!ok) return;
     pushParamSnapshot(latestTime, {
       frequency: frequency || 'N/A',
@@ -401,9 +422,11 @@ const SensorPanel: React.FC = () => {
 
   // Define parameter column order
   const paramCols = ['frequency','level','intensity','motorPoints','position','pvv1','pvv2','pvv3'];
+  // Add patient/sensor metadata columns to header
+  const metaCols = ['patientName','sensorName'];
 
-    // Build header
-    let csv = ['time','sensor1','sensor2', ...paramCols].join(',') + '\n';
+  // Build header (include meta columns after sensors)
+  let csv = ['time','sensor1','sensor2', ...paramCols, ...metaCols].join(',') + '\n';
 
     // Use a pointer into snaps because times are sorted ascending
     let snapIdx = 0;
@@ -435,8 +458,9 @@ const SensorPanel: React.FC = () => {
 
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
-      const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
-      csv += `${t},${v1},${v2},${paramVals.join(',')}\n`;
+  const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
+  const metaVals = [escapeCSV(patientName || 'N/A'), escapeCSV(sensorName || 'N/A')];
+  csv += `${t},${v1},${v2},${paramVals.join(',')},${metaVals.join(',')}\n`;
     }
 
     // Append markers section so time markers are preserved in the recording file
@@ -458,8 +482,8 @@ const SensorPanel: React.FC = () => {
     // Helper to sanitize parts for filenames
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
 
-  const freqPart = frequency ? `${sanitize(frequency)}Hz` : 'freqNA';
-  const levelPart = level ? `${sanitize(level)}` : 'levelNA';
+  const patientPart = patientName ? sanitize(patientName) : 'patientNA';
+  const sensorPart = sensorName ? sanitize(sensorName) : 'sensorNA';
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -469,12 +493,19 @@ const SensorPanel: React.FC = () => {
     const d = new Date();
     const pad = (n: number, w = 2) => String(n).padStart(w, '0');
     const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`;
-  a.download = `mms_${freqPart}_${levelPart}_${iso}.csv`;
+  a.download = `mms_${patientPart}_${sensorPart}_${iso}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
   };
+
+  // Save validation state (computed each render)
+  const hasRecordedData = (recordedRef.current.sensor1.length > 0) || (recordedRef.current.sensor2.length > 0);
+  const saveMissingReasons: string[] = [];
+  if (!hasRecordedData) saveMissingReasons.push('No recorded sensor data');
+  if (!patientName || !patientName.trim()) saveMissingReasons.push('Patient Name is required');
+  if (!sensorName || !sensorName.trim()) saveMissingReasons.push('Sensor Name is required');
 
   return (
     <div className={styles.container}>
@@ -492,6 +523,7 @@ const SensorPanel: React.FC = () => {
         </div>
 
         {isConnected && (
+          <>
           <div className={styles.controlBox}>
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
@@ -551,44 +583,62 @@ const SensorPanel: React.FC = () => {
                   </div>
                 </div>
               </div>
-            <div className={styles.buttonContainer}>
-              <button className={styles.button} onClick={handleStartIMU} disabled={!isConnected || isMeasuring}>
-                Start Sensor(s)
-              </button>
-              <button className={styles.button} onClick={handleStopIMU} disabled={!isConnected || !isMeasuring}>
-                Stop Sensor(s)
-              </button>
-              <button className={styles.button} onClick={handleStartRecording} disabled={!isConnected || !isMeasuring || isRecording || !paramsSubmitted}>
-                Start Recording
-              </button>
-              <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
-                Stop Recording
-              </button>
-              {/* Modify button moved next to parameter inputs */}
-              <button
-                className={styles.button}
-                onClick={() => {
-                  const emptyFields: string[] = [];
-                  if (!frequency || frequency.trim() === '') emptyFields.push('Frequency');
-                  if (!motorPoints || motorPoints.trim() === '') emptyFields.push('Motor points');
-                  if (!position || position.trim() === '') emptyFields.push('Position');
-                  if (!pvv1 || pvv1.trim() === '') emptyFields.push('PVV1');
-                  if (!pvv2 || pvv2.trim() === '') emptyFields.push('PVV2');
-                  if (!pvv3 || pvv3.trim() === '') emptyFields.push('PVV3');
+            <div className={styles.controlsRow}>
+              <div className={styles.buttonContainer}>
+                <button className={styles.button} onClick={handleStartIMU} disabled={!isConnected || isMeasuring}>
+                  Start Sensor(s)
+                </button>
+                <button className={styles.button} onClick={handleStopIMU} disabled={!isConnected || !isMeasuring}>
+                  Stop Sensor(s)
+                </button>
+                <button className={styles.button} onClick={handleStartRecording} disabled={!isConnected || !isMeasuring || isRecording || !paramsSubmitted}>
+                  Start Recording
+                </button>
+                <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
+                  Stop Recording
+                </button>
+              </div>
 
-                  if (emptyFields.length) {
-                    const list = emptyFields.join(', ');
-                    const ok = window.confirm(`The following fields are empty: ${list}. Are you sure you want to save?`);
-                    if (!ok) return;
-                  }
-                  handleSaveRecording();
-                }}
-                disabled={isRecording || (recordedRef.current.sensor1.length===0 && recordedRef.current.sensor2.length===0)}
-              >
-                Save Recording
-              </button>
+              
             </div>
           </div>
+
+          {/* New gray save panel on the right side */}
+          <div className={styles.savePanel}>
+            <h3 style={{ margin: '0 0 12px 0' }}>Save File Data</h3>
+            <label className={styles.inputLabel} style={{ width: '100%', marginBottom: 8 }}>
+              <span className={styles.labelRow}>Patient Name:</span>
+              <input className={styles.textInput} value={patientName} onChange={(e) => setPatientName(e.target.value)} />
+            </label>
+            <label className={styles.inputLabel} style={{ width: '100%' }}>
+              <span className={styles.labelRow}>Sensor Name:</span>
+              <input className={styles.textInput} value={sensorName} onChange={(e) => setSensorName(e.target.value)} />
+            </label>
+            <div style={{ height: 8 }} />
+            {/* Validation messages */}
+            {saveMissingReasons.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {saveMissingReasons.map((m, i) => (
+                  <div key={i} className={styles.saveError}>{m}</div>
+                ))}
+              </div>
+            )}
+            <button
+              className={styles.button}
+              onClick={() => {
+                handleSaveRecording();
+              }}
+              disabled={
+                isRecording ||
+                !hasRecordedData ||
+                !patientName.trim() ||
+                !sensorName.trim()
+              }
+            >
+              Save Recording
+            </button>
+          </div>
+          </>
         )}
       </div>
 
