@@ -521,7 +521,7 @@ const SensorPanel: React.FC = () => {
                   </label>
                 </div>
                 <div style={{ width: 180, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }} className={styles.modifyAreaFixed}>
-                  <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
+                  <button className={`${styles.button} ${styles.compactButton} ${styles.inputParamsNudge}`} onClick={handleApplyModify} disabled={!isConnected}>
                     Input Parameters
                   </button>
                   <div style={{ marginLeft: 10 }} aria-live="polite">
