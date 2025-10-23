@@ -204,6 +204,12 @@
   color: #222;
 }
 
+.inputRowRight {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
 .labelRow {
   display: inline-flex;
   align-items: center;
