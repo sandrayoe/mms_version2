@@ -510,7 +510,7 @@ const SensorPanel: React.FC = () => {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: 10, flex: 1 }}>
+                <div style={{ display: 'flex', gap: 10, flex: 1, alignItems: 'center' }}>
                   <label className={styles.inputLabel} style={{ flex: 1 }}>
                     <span className={styles.labelRow}>Intensity (mA):</span>
                     <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => setIntensity(e.target.value)} />
