@@ -67,6 +67,8 @@ const SensorPanel: React.FC = () => {
   const [pvv2, setPvv2] = useState<string>("");
   const [pvv3, setPvv3] = useState<string>("");
   const [modifyMode, setModifyMode] = useState<boolean>(false);
+  // whether the user has submitted input parameters (required fields) before recording
+  const [paramsSubmitted, setParamsSubmitted] = useState<boolean>(false);
   // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
   const paramSnapshotsRef = useRef<Array<{ time: number; params: Record<string, string> }>>([]);
 
@@ -101,14 +103,16 @@ const SensorPanel: React.FC = () => {
         pvv2: pvv2 || 'N/A',
         pvv3: pvv3 || 'N/A',
       });
+      // mark submitted since user explicitly applied/submitted parameters
+      setParamsSubmitted(true);
       setLastAppliedTime(t);
       setShowApplied(true);
       setTimeout(() => setShowApplied(false), 1500);
-      window.alert('Parameter snapshot captured (not recording).');
+      window.alert('Input parameters saved.');
       return;
     }
     const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
-    const ok = window.confirm('Apply current parameters to the recording at current time?');
+  const ok = window.confirm('Apply current parameters to the recording at current time?');
     if (!ok) return;
     pushParamSnapshot(latestTime, {
       frequency: frequency || 'N/A',
@@ -120,6 +124,7 @@ const SensorPanel: React.FC = () => {
       pvv2: pvv2 || 'N/A',
       pvv3: pvv3 || 'N/A',
     });
+    setParamsSubmitted(true);
     setLastAppliedTime(latestTime);
     setShowApplied(true);
     setTimeout(() => setShowApplied(false), 1500);
@@ -495,7 +500,7 @@ const SensorPanel: React.FC = () => {
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => setFrequency(e.target.value)} />
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>Level:</span>
@@ -509,32 +514,32 @@ const SensorPanel: React.FC = () => {
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => setMotorPoints(e.target.value)} />
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
                 </label>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>Position:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={position} onChange={(e) => setPosition(e.target.value)} />
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={position} onChange={(e) => { setPosition(e.target.value); setParamsSubmitted(false); }} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>PVV1:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv1} onChange={(e) => setPvv1(e.target.value)} />
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv1} onChange={(e) => { setPvv1(e.target.value); setParamsSubmitted(false); }} />
                 </label>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>PVV2:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv2} onChange={(e) => setPvv2(e.target.value)} />
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv2} onChange={(e) => { setPvv2(e.target.value); setParamsSubmitted(false); }} />
                 </label>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>PVV3:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => setPvv3(e.target.value)} />
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => { setPvv3(e.target.value); setParamsSubmitted(false); }} />
                 </label>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }} className={styles.modifyArea}>
                 <button className={styles.button} onClick={handleApplyModify} disabled={!isConnected}>
-                  Modify (apply params)
+                  Input Parameters
                 </button>
                 <div style={{ marginLeft: 10 }} aria-live="polite">
                   {showApplied && lastAppliedTime !== null && (
@@ -550,7 +555,7 @@ const SensorPanel: React.FC = () => {
               <button className={styles.button} onClick={handleStopIMU} disabled={!isConnected || !isMeasuring}>
                 Stop Sensor(s)
               </button>
-              <button className={styles.button} onClick={handleStartRecording} disabled={!isConnected || !isMeasuring || isRecording}>
+              <button className={styles.button} onClick={handleStartRecording} disabled={!isConnected || !isMeasuring || isRecording || !paramsSubmitted}>
                 Start Recording
               </button>
               <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
