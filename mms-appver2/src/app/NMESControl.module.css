@@ -148,6 +148,7 @@
   max-width: 320px; /* keep inputs nicely contained */
   align-items: stretch; /* make inputs full-width within the block */
   margin-bottom: 12px;
+  padding-right: 220px; /* reserve space on the right for the absolute Input Parameters button */
 }
 
 .inputLabel {
