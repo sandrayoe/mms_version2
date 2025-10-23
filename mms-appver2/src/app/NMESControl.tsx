@@ -497,13 +497,13 @@ const SensorPanel: React.FC = () => {
             <div className={styles.inputsBlock}>
               {/* Patient name removed - using parameter fields instead */}
 
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }} className={styles.inputRowRight}>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: 1 }}>
+              <div style={{ display: 'flex', gap: 18, alignItems: 'center' }} className={styles.inputRowRight}>
+                <div style={{ display: 'flex', gap: 18, alignItems: 'center', flex: 1 }}>
                   <label className={styles.inputLabel} style={{ flex: 1 }}>
                     <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
                     <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
                   </label>
-                  <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  <label className={`${styles.inputLabel} ${styles.levelInputWrap}`} style={{ flex: 1 }}>
                     <span className={styles.labelRow}>Level:</span>
                     <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
                   </label>

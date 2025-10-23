@@ -228,7 +228,11 @@
 }
 
 .smallInput {
-  width: 120px; /* used for frequency/level to keep compact */
+  width: 150px; /* used for frequency/level to keep compact; increased for spacing */
+}
+
+.levelInputWrap {
+  margin-right: 18px; /* add breathing room to separate Level from the button */
 }
 
 .requiredAsterisk {
