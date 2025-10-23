@@ -509,7 +509,7 @@ const SensorPanel: React.FC = () => {
                   </label>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center', position: 'relative' }}>
                 <div style={{ display: 'flex', gap: 10, flex: 1, alignItems: 'center' }}>
                   <label className={styles.inputLabel} style={{ flex: 1 }}>
                     <span className={styles.labelRow}>Intensity (mA):</span>
@@ -520,7 +520,7 @@ const SensorPanel: React.FC = () => {
                     <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
                   </label>
                 </div>
-                <div style={{ width: 180, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }} className={styles.modifyAreaFixed}>
+                <div style={{ width: 180, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }} className={styles.modifyAreaFixed}>
                   <button className={`${styles.button} ${styles.compactButton} ${styles.inputParamsNudge}`} onClick={handleApplyModify} disabled={!isConnected}>
                     Input Parameters
                   </button>
