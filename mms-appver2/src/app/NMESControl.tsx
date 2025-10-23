@@ -496,24 +496,48 @@ const SensorPanel: React.FC = () => {
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
               {/* Patient name removed - using parameter fields instead */}
-                {/* Row 1: Frequency (left) - spacer (middle) - Level (right) */}
-                <label className={styles.inputLabel}>
+                {/* Row 1: Frequency (left) - Level (middle) */}
+                <label className={`${styles.inputLabel} ${styles.col1}`}>
                   <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
                 </label>
-                <div />
-                <label className={`${styles.inputLabel} ${styles.levelInputWrap}`}>
+                <label className={`${styles.inputLabel} ${styles.col2} ${styles.levelInputWrap}`}>
                   <span className={styles.labelRow}>Level:</span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
                 </label>
 
-                {/* Row 2: Intensity (left) - Button (middle) - Motor points (right) */}
-                <label className={styles.inputLabel}>
+                {/* Row 2: Intensity (left middle) - Motor points (middle/right) */}
+                <label className={`${styles.inputLabel} ${styles.col1}`}>
                   <span className={styles.labelRow}>Intensity (mA):</span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => setIntensity(e.target.value)} />
                 </label>
+                <label className={`${styles.inputLabel} ${styles.col2}`}>
+                  <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
+                </label>
+
+                {/* Row 3: Position (left) - PVV1 (middle) */}
+                <label className={`${styles.inputLabel} ${styles.col1}`}>
+                  <span className={styles.labelRow}>Position:<span className={styles.requiredAsterisk}>*</span></span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={position} onChange={(e) => { setPosition(e.target.value); setParamsSubmitted(false); }} />
+                </label>
+                <label className={`${styles.inputLabel} ${styles.col2}`}>
+                  <span className={styles.labelRow}>PVV1:<span className={styles.requiredAsterisk}>*</span></span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv1} onChange={(e) => { setPvv1(e.target.value); setParamsSubmitted(false); }} />
+                </label>
+
+                {/* Row 4: PVV2 (left) - PVV3 (middle) */}
+                <label className={`${styles.inputLabel} ${styles.col1}`}>
+                  <span className={styles.labelRow}>PVV2:<span className={styles.requiredAsterisk}>*</span></span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv2} onChange={(e) => { setPvv2(e.target.value); setParamsSubmitted(false); }} />
+                </label>
+                <label className={`${styles.inputLabel} ${styles.col2}`}>
+                  <span className={styles.labelRow}>PVV3:<span className={styles.requiredAsterisk}>*</span></span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => { setPvv3(e.target.value); setParamsSubmitted(false); }} />
+                </label>
+                {/* place the button in the right column (col 3). It will naturally align vertically centered because of grid-row spanning behaviour */}
                 <div className={styles.inputRightCell}>
-                  <div className={styles.modifyAreaFixed} style={{ width: '100%', maxWidth: 200 }}>
+                  <div className={styles.modifyArea} style={{ width: '100%', maxWidth: 220 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                       <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
                         Input Parameters
@@ -526,32 +550,6 @@ const SensorPanel: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                <label className={styles.inputLabel}>
-                  <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-
-                {/* Row 3: Position (left) - spacer - PVV1 (right) */}
-                <label className={styles.inputLabel}>
-                  <span className={styles.labelRow}>Position:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={position} onChange={(e) => { setPosition(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                <div />
-                <label className={styles.inputLabel}>
-                  <span className={styles.labelRow}>PVV1:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv1} onChange={(e) => { setPvv1(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-
-                {/* Row 4: PVV2 (left) - spacer - PVV3 (right) */}
-                <label className={styles.inputLabel}>
-                  <span className={styles.labelRow}>PVV2:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv2} onChange={(e) => { setPvv2(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                <div />
-                <label className={styles.inputLabel}>
-                  <span className={styles.labelRow}>PVV3:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => { setPvv3(e.target.value); setParamsSubmitted(false); }} />
-                </label>
               </div>
             <div className={styles.buttonContainer}>
               <button className={styles.button} onClick={handleStartIMU} disabled={!isConnected || isMeasuring}>
