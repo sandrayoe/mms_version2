@@ -509,16 +509,18 @@ const SensorPanel: React.FC = () => {
                   </label>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-                <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>Intensity (mA):</span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => setIntensity(e.target.value)} />
-                </label>
-                <label className={styles.inputLabel} style={{ flex: 1 }}>
-                  <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }} className={styles.modifyArea}>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 10, flex: 1 }}>
+                  <label className={styles.inputLabel} style={{ flex: 1 }}>
+                    <span className={styles.labelRow}>Intensity (mA):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => setIntensity(e.target.value)} />
+                  </label>
+                  <label className={styles.inputLabel} style={{ flex: 1 }}>
+                    <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
+                  </label>
+                </div>
+                <div style={{ width: 180, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }} className={styles.modifyAreaFixed}>
                   <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
                     Input Parameters
                   </button>

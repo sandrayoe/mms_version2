@@ -202,6 +202,12 @@
   margin-left: 6px; /* nudge the whole area slightly to the right */
 }
 
+.modifyAreaFixed {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .compactButton {
   padding: 8px 12px;
   min-height: 40px;
