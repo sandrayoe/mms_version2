@@ -508,16 +508,6 @@ const SensorPanel: React.FC = () => {
                     <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
                   </label>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }} className={styles.modifyArea}>
-                  <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
-                    Input Parameters
-                  </button>
-                  <div style={{ marginLeft: 10 }} aria-live="polite">
-                    {showApplied && lastAppliedTime !== null && (
-                      <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
-                    )}
-                  </div>
-                </div>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
@@ -528,6 +518,16 @@ const SensorPanel: React.FC = () => {
                   <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
                 </label>
+                <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto' }} className={styles.modifyArea}>
+                  <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
+                    Input Parameters
+                  </button>
+                  <div style={{ marginLeft: 10 }} aria-live="polite">
+                    {showApplied && lastAppliedTime !== null && (
+                      <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
+                    )}
+                  </div>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
