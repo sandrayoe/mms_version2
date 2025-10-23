@@ -242,6 +242,15 @@
   border-radius: 6px;
 }
 
+/* place a control into the middle column and vertically span rows 2-3 (central area) */
+.buttonMidCell {
+  grid-column: 2 / 3;
+  grid-row: 2 / 4; /* span middle two rows */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .applyBadge {
   background: #d4f7dc; /* soft green */
   color: #0b6623;

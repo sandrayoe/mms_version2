@@ -535,8 +535,8 @@ const SensorPanel: React.FC = () => {
                   <span className={styles.labelRow}>PVV3:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => { setPvv3(e.target.value); setParamsSubmitted(false); }} />
                 </label>
-                {/* place the button in the right column (col 3). It will naturally align vertically centered because of grid-row spanning behaviour */}
-                <div className={styles.inputRightCell}>
+                {/* place the button in the middle column and span rows 2-3 so it sits among the input boxes */}
+                <div className={styles.buttonMidCell}>
                   <div className={styles.modifyArea} style={{ width: '100%', maxWidth: 220 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                       <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
