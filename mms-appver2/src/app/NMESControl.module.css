@@ -141,14 +141,22 @@
 
 /* Inputs block inside the control box */
 .inputsBlock {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 220px; /* left column for inputs, right reserved for the button */
+  column-gap: 16px;
+  row-gap: 8px;
   width: 100%;
-  max-width: 320px; /* keep inputs nicely contained */
-  align-items: stretch; /* make inputs full-width within the block */
+  max-width: 560px; /* allow room for both columns */
+  align-items: start; /* align rows from the top */
   margin-bottom: 12px;
-  padding-left: 80px; /* reserve space on the right for the absolute Input Parameters button */
+}
+
+.inputRightCell {
+  grid-column: 2 / 3;
+  grid-row: 2 / 3; /* place beside the Intensity/Motor points row */
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .inputLabel {
