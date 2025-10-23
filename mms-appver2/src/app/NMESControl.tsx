@@ -57,10 +57,46 @@ const SensorPanel: React.FC = () => {
   type Marker = { time: number; type: "start" | "stop" };
   const [markers, setMarkers] = useState<Marker[]>([]);
 
-  // User inputs for file naming
-  const [patientName, setPatientName] = useState<string>("");
+  // User inputs for file naming and parameters
   const [frequency, setFrequency] = useState<string>("");
   const [level, setLevel] = useState<string>("");
+  const [intensity, setIntensity] = useState<string>("");
+  const [motorPoints, setMotorPoints] = useState<string>("");
+  const [position, setPosition] = useState<string>("");
+  const [pvv1, setPvv1] = useState<string>("");
+  const [pvv2, setPvv2] = useState<string>("");
+  const [pvv3, setPvv3] = useState<string>("");
+  const [modifyMode, setModifyMode] = useState<boolean>(false);
+  // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
+  const paramSnapshotsRef = useRef<Array<{ time: number; params: Record<string, string> }>>([]);
+
+  // Helper to append a parameter snapshot (keeps chronological order)
+  const pushParamSnapshot = (time: number, params: Record<string,string>) => {
+    const arr = paramSnapshotsRef.current;
+    // avoid duplicate consecutive identical snapshots
+    if (arr.length) {
+      const last = arr[arr.length-1].params;
+      const same = Object.keys(params).every(k => (last[k]||'') === (params[k]||''));
+      if (same) return;
+    }
+    arr.push({ time, params });
+  };
+
+  // Auto-capture snapshots when parameter inputs change while recording
+  useEffect(() => {
+    if (!isRecording) return;
+    const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
+    pushParamSnapshot(latestTime, {
+      frequency: frequency || 'N/A',
+      level: level || 'N/A',
+      intensity: intensity || 'N/A',
+      motorPoints: motorPoints || 'N/A',
+      position: position || 'N/A',
+      pvv1: pvv1 || 'N/A',
+      pvv2: pvv2 || 'N/A',
+      pvv3: pvv3 || 'N/A',
+    });
+  }, [frequency, level, intensity, motorPoints, position, pvv1, pvv2, pvv3]);
   // diagnostics removed from UI; use BIN_MS to control displayed smoothing
   // Diagnostics for timing and sample indexing
   const lastTickWallClockRef = useRef<number | null>(null);
@@ -302,24 +338,81 @@ const SensorPanel: React.FC = () => {
   };
 
   const handleSaveRecording = () => {
-    // Merge sensor1 and sensor2 by time and produce CSV with headers: time,sensor1,sensor2
+    // Merge sensor1 and sensor2 by time and produce CSV with headers: time,sensor1,sensor2,<params...>
     const s1 = recordedRef.current.sensor1 ?? [];
     const s2 = recordedRef.current.sensor2 ?? [];
     // Collect all times (union) and sort
     const timesSet = new Set<number>();
-    s1.forEach(p => timesSet.add(p.time));
-    s2.forEach(p => timesSet.add(p.time));
-    const times = Array.from(timesSet).sort((a,b) => a - b);
+    s1.forEach((p) => timesSet.add(p.time));
+    s2.forEach((p) => timesSet.add(p.time));
+    const times = Array.from(timesSet).sort((a, b) => a - b);
 
     // Create maps time->value for quick lookup
-    const map1 = new Map(s1.map(p => [p.time, p.sensorValue] as [number, number]));
-    const map2 = new Map(s2.map(p => [p.time, p.sensorValue] as [number, number]));
+    const map1 = new Map(s1.map((p) => [p.time, p.sensorValue] as [number, number]));
+    const map2 = new Map(s2.map((p) => [p.time, p.sensorValue] as [number, number]));
 
-    let csv = 'time,sensor1,sensor2\n';
+    // Prepare parameter snapshots (ensure sorted by time)
+    const snaps = (paramSnapshotsRef.current ?? []).slice().sort((a, b) => a.time - b.time);
+
+    // CSV helper to escape fields that may contain commas/quotes/newlines
+    const escapeCSV = (v: string) => {
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      if (s.includes('"')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      if (s.includes(',') || s.includes('\n') || s.includes('\r')) {
+        return '"' + s + '"';
+      }
+      return s;
+    };
+
+  // Define parameter column order
+  const paramCols = ['frequency','level','intensity','motorPoints','position','pvv1','pvv2','pvv3'];
+
+    // Build header
+    let csv = ['time','sensor1','sensor2', ...paramCols].join(',') + '\n';
+
+    // Use a pointer into snaps because times are sorted ascending
+    let snapIdx = 0;
     for (const t of times) {
+      // advance snapIdx while next snapshot time <= t
+      while (snapIdx + 1 < snaps.length && snaps[snapIdx + 1].time <= t) snapIdx++;
+      // If the first snap is after t, we keep snapIdx at 0 only if its time <= t, otherwise there is no snap <= t
+      let paramsForRow: Record<string,string> = {};
+      if (snaps.length === 0) {
+        // no snapshots recorded; use current UI values as best-effort
+        paramsForRow = {
+          frequency: frequency || 'N/A',
+          level: level || 'N/A',
+          intensity: intensity || 'N/A',
+          motorPoints: motorPoints || 'N/A',
+          position: position || 'N/A',
+          pvv1: pvv1 || 'N/A',
+          pvv2: pvv2 || 'N/A',
+          pvv3: pvv3 || 'N/A',
+        };
+      } else {
+        // if the current snapIdx's time is <= t, use it; otherwise use the earliest snap (fallback)
+        if (snaps[snapIdx].time <= t) {
+          paramsForRow = snaps[snapIdx].params;
+        } else {
+          paramsForRow = snaps[0].params;
+        }
+      }
+
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
-      csv += `${t},${v1},${v2}\n`;
+      const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
+      csv += `${t},${v1},${v2},${paramVals.join(',')}\n`;
+    }
+
+    // Append markers section so time markers are preserved in the recording file
+    if (markers && markers.length) {
+      csv += '\nmarkers,type,time\n';
+      for (const m of markers) {
+        csv += `${m.type},${m.type},${m.time}\n`;
+      }
     }
 
     // Append markers section so time markers are preserved in the recording file
@@ -333,20 +426,18 @@ const SensorPanel: React.FC = () => {
     // Helper to sanitize parts for filenames
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
 
-    const patientPart = patientName ? sanitize(patientName) : 'unknown';
-    const freqPart = frequency ? `${sanitize(frequency)}Hz` : 'freqNA';
-    const levelPart = level ? `${sanitize(level)}` : 'levelNA';
+  const freqPart = frequency ? `${sanitize(frequency)}Hz` : 'freqNA';
+  const levelPart = level ? `${sanitize(level)}` : 'levelNA';
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-  // Build user-friendly filename including provided inputs, use compact numeric timestamp (no Z, no colons)
-  // Example: 2025-10-22T19-10-31-544
-  const d = new Date();
-  const pad = (n: number, w = 2) => String(n).padStart(w, '0');
-  const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`;
-  a.download = `mms_${patientPart}_${freqPart}_${levelPart}_${iso}.csv`;
+    // Build user-friendly filename including provided inputs, use compact numeric timestamp (no Z, no colons)
+    const d = new Date();
+    const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+    const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`;
+  a.download = `mms_${freqPart}_${levelPart}_${iso}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -372,10 +463,7 @@ const SensorPanel: React.FC = () => {
           <div className={styles.controlBox}>
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
-              <label className={styles.inputLabel}>
-                <span className={styles.labelRow}>Patient name:<span className={styles.requiredAsterisk}>*</span></span>
-                <input className={styles.textInput} value={patientName} onChange={(e) => setPatientName(e.target.value)} />
-              </label>
+              {/* Patient name removed - using parameter fields instead */}
 
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
@@ -385,6 +473,36 @@ const SensorPanel: React.FC = () => {
                 <label className={styles.inputLabel} style={{ flex: 1 }}>
                   <span className={styles.labelRow}>Level:<span className={styles.requiredAsterisk}>*</span></span>
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  <span className={styles.labelRow}>Intensity (mA):</span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => setIntensity(e.target.value)} />
+                </label>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => setMotorPoints(e.target.value)} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  <span className={styles.labelRow}>Position:</span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={position} onChange={(e) => setPosition(e.target.value)} />
+                </label>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  <span className={styles.labelRow}>PVV1:</span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv1} onChange={(e) => setPvv1(e.target.value)} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  <span className={styles.labelRow}>PVV2:</span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv2} onChange={(e) => setPvv2(e.target.value)} />
+                </label>
+                <label className={styles.inputLabel} style={{ flex: 1 }}>
+                  <span className={styles.labelRow}>PVV3:</span>
+                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => setPvv3(e.target.value)} />
                 </label>
               </div>
             </div>
@@ -405,9 +523,8 @@ const SensorPanel: React.FC = () => {
                 className={styles.button}
                 onClick={() => {
                   const emptyFields: string[] = [];
-                  if (!patientName || patientName.trim() === '') emptyFields.push('Patient name');
                   if (!frequency || frequency.trim() === '') emptyFields.push('Frequency');
-                  if (!level || level.trim() === '') emptyFields.push('Level');
+                  if (!motorPoints || motorPoints.trim() === '') emptyFields.push('Motor points');
 
                   if (emptyFields.length) {
                     const list = emptyFields.join(', ');
