@@ -142,13 +142,15 @@
 /* Inputs block inside the control box */
 .inputsBlock {
   display: grid;
-  grid-template-columns: 1fr 220px; /* left column for stacked inputs, right column for the button */
-  column-gap: 24px;
+  /* two fluid columns for inputs, one fixed column on the right for the button */
+  grid-template-columns: 1fr 1fr 220px;
+  column-gap: 20px;
   row-gap: 12px;
   width: 100%;
-  max-width: 680px; /* room for inputs + button column */
+  max-width: 900px; /* room for inputs + button column */
   align-items: start;
   margin-bottom: 12px;
+  grid-auto-rows: min-content;
 }
 
 .inputsLeftColumn {
@@ -159,12 +161,12 @@
 }
 
 .inputRightCell {
-  grid-column: 2 / 3;
-  grid-row: 1 / 2; /* span the height and center vertically */
+  grid-column: 3 / 4; /* put the button into the dedicated right column */
+  grid-row: 1 / -1; /* span the full height of the inputs so it centers vertically */
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-left: 24px; /* give visual breathing room from inputs */
+  padding-left: 12px; /* visual breathing room from inputs */
 }
 
 .inputLabel {
@@ -214,27 +216,23 @@
 .modifyArea {
   display: flex;
   align-items: center;
-  margin-left: 10px; /* nudge the whole area slightly to the right */
+  justify-content: center;
+  gap: 8px;
 }
 
 .modifyAreaFixed {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .compactButton {
-  padding: 8px 12px;
+  padding: 8px 14px;
   min-height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform: translateX(4px); /* slight nudge to the right */
-}
-
-.inputParamsNudge {
-  position: relative !important;
-  left: 20px !important; /* increased nudge from 2px -> 20px for visibility */
+  border-radius: 6px;
 }
 
 .applyBadge {

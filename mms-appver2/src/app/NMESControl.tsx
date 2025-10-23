@@ -513,14 +513,16 @@ const SensorPanel: React.FC = () => {
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => setIntensity(e.target.value)} />
                 </label>
                 <div className={styles.inputRightCell}>
-                  <div style={{ width: 180, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }} className={styles.modifyAreaFixed}>
-                    <button className={`${styles.button} ${styles.compactButton} ${styles.inputParamsNudge}`} onClick={handleApplyModify} disabled={!isConnected}>
-                      Input Parameters
-                    </button>
-                    <div style={{ marginLeft: 10 }} aria-live="polite">
-                      {showApplied && lastAppliedTime !== null && (
-                        <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
-                      )}
+                  <div className={styles.modifyAreaFixed} style={{ width: '100%', maxWidth: 200 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                      <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
+                        Input Parameters
+                      </button>
+                      <div aria-live="polite">
+                        {showApplied && lastAppliedTime !== null && (
+                          <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
