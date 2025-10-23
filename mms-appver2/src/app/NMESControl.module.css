@@ -10,13 +10,6 @@
   text-align: center;
 }
 
-.leftColumn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  width: 100%;
-}
-
 .logo {
   width: 6rem; /* Make logo slightly bigger */
   margin: 0 auto;
@@ -52,46 +45,7 @@
   background-color: #444;
 }
 
-.statusBox,
-.electrodeBox {
-  background: #f8f8f8;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.1);
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 12px; /* ✅ Increased gap between lines */
-}
-
-.electrodeBox div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 1rem;
-  font-weight: 500;
-  margin-bottom: 8px; /* ✅ Increased spacing */
-}
-
-/* ✅ Remove background highlight for Current Pair & Current (mA) */
-.electrodeBox span {
-  font-weight: bold;
-  color: #333;
-}
-
-/* ✅ Keep green highlight for Best Pair */
-.valueBox {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 1rem;
-  font-weight: bold;
-}
-
-/* ✅ Keep best pair & best current highlighted */
-.green {
-  background: #d4edda;
-  color: #155724;
-}
+/* electrode/status styles removed (unused) */
 
 .contentContainer {
   display: flex;
@@ -240,16 +194,12 @@
   margin-left: 6px;
 }
 
-.requiredNote {
-  font-size: 0.85rem;
-  color: #555;
-  margin-top: 6px;
-  text-align: left;
-}
+/* requiredNote removed (unused) */
 
 .modifyArea {
   display: flex;
   align-items: center;
+  margin-left: 6px; /* nudge the whole area slightly to the right */
 }
 
 .compactButton {
@@ -258,6 +208,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transform: translateX(4px); /* slight nudge to the right */
 }
 
 .applyBadge {
