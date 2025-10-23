@@ -429,39 +429,48 @@ const SensorPanel: React.FC = () => {
         <div className={styles.contentContainer}>
           <div className={styles.rightPanel}>
             <div className={styles.chartsGrid}>
+              {/* Row 1: Sensor 1 (250) left, Sensor 1 (50) right */}
               <div className={styles.chartContainer}>
-                <h3>Sensor 1 Readings </h3>
+                <h3>Sensor 1 Readings (0-{CHART_Y_MAX})</h3>
                 <ResponsiveContainer width="100%" height={320}>
                   <LineChart data={sensor1Data}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="time"
-                      type="number"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(s) => Number(s).toFixed(1)}
-                    />
+                    <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
                     <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} />
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
                     <Legend />
                     <Line type="linear" dataKey="sensorValue" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
-                      {markers.map((m, i) => (
-                        <ReferenceLine key={`m1-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
-                      ))}
+                    {markers.map((m, i) => (
+                      <ReferenceLine key={`m1-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
+                    ))}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
 
               <div className={styles.chartContainer}>
-                <h3>Sensor 2 Readings </h3>
+                <h3>Sensor 1 Readings (0-50)</h3>
+                <ResponsiveContainer width="100%" height={320}>
+                  <LineChart data={sensor1Data}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
+                    <YAxis domain={[0, 50]} tickCount={6} />
+                    <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
+                    <Legend />
+                    <Line type="linear" dataKey="sensorValue" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
+                    {markers.map((m, i) => (
+                      <ReferenceLine key={`m1s-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Row 2: Sensor 2 (250) left, Sensor 2 (50) right */}
+              <div className={styles.chartContainer}>
+                <h3>Sensor 2 Readings (0-{CHART_Y_MAX})</h3>
                 <ResponsiveContainer width="100%" height={320}>
                   <LineChart data={sensor2Data}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis
-                      dataKey="time"
-                      type="number"
-                      domain={["dataMin", "dataMax"]}
-                      tickFormatter={(s) => Number(s).toFixed(1)}
-                    />
+                    <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
                     <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} />
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
                     <Legend />
@@ -472,56 +481,23 @@ const SensorPanel: React.FC = () => {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-            {/* Additional combined charts with tighter Y scale (0-50) */}
-            {/* Build combined data on-the-fly from sensor1Data and sensor2Data */}
-            {(() => {
-              const timesSet = new Set<number>();
-              sensor1Data.forEach((p) => timesSet.add(p.time));
-              sensor2Data.forEach((p) => timesSet.add(p.time));
-              const times = Array.from(timesSet).sort((a, b) => a - b);
-              const map1 = new Map(sensor1Data.map((p) => [p.time, p.sensorValue] as [number, number]));
-              const map2 = new Map(sensor2Data.map((p) => [p.time, p.sensorValue] as [number, number]));
-              const combined = times.map((t) => ({ time: t, s1: map1.get(t) ?? null, s2: map2.get(t) ?? null }));
-              return (
-                <>
-                  <div className={styles.chartContainer}>
-                    <h3>Sensors 1 &amp; 2 (0-50)</h3>
-                    <ResponsiveContainer width="100%" height={320}>
-                      <LineChart data={combined}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                        <YAxis domain={[0, 50]} tickCount={6} />
-                        <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
-                        <Legend />
-                        <Line type="linear" dataKey="s1" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
-                        <Line type="linear" dataKey="s2" stroke="#82ca9d" strokeWidth={2} name="Sensor 2" dot={false} isAnimationActive={false} />
-                        {markers.map((m, i) => (
-                          <ReferenceLine key={`m3-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
 
-                  <div className={styles.chartContainer}>
-                    <h3>Sensors 1 &amp; 2 (0-50) — copy</h3>
-                    <ResponsiveContainer width="100%" height={320}>
-                      <LineChart data={combined}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                        <YAxis domain={[0, 50]} tickCount={6} />
-                        <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
-                        <Legend />
-                        <Line type="linear" dataKey="s1" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
-                        <Line type="linear" dataKey="s2" stroke="#82ca9d" strokeWidth={2} name="Sensor 2" dot={false} isAnimationActive={false} />
-                        {markers.map((m, i) => (
-                          <ReferenceLine key={`m4-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
-                        ))}
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </>
-              );
-            })()}
+              <div className={styles.chartContainer}>
+                <h3>Sensor 2 Readings (0-50)</h3>
+                <ResponsiveContainer width="100%" height={320}>
+                  <LineChart data={sensor2Data}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
+                    <YAxis domain={[0, 50]} tickCount={6} />
+                    <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} />
+                    <Legend />
+                    <Line type="linear" dataKey="sensorValue" stroke="#82ca9d" strokeWidth={2} name="Sensor 2" dot={false} isAnimationActive={false} />
+                    {markers.map((m, i) => (
+                      <ReferenceLine key={`m2s-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </div>
