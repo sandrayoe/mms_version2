@@ -148,9 +148,11 @@
   row-gap: 12px;
   width: 100%;
   max-width: 900px; /* room for inputs + button column */
-  align-items: start;
+  /* allow the right column to stretch and vertically center the button */
+  align-items: stretch;
   margin-bottom: 12px;
-  grid-auto-rows: min-content;
+  /* make rows flexible so the right cell can span the full height */
+  grid-auto-rows: 1fr;
 }
 
 .inputsLeftColumn {
@@ -162,10 +164,15 @@
 
 .inputRightCell {
   grid-column: 3 / 4; /* put the button into the dedicated right column */
+  /* span the full height of the grid so the button can be vertically centered */
+  grid-row: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: center;
   padding-left: 12px; /* visual breathing room from inputs */
+  padding-right: 6px;
+  /* small downward nudge to position the button slightly lower visually */
+  transform: translateY(40px);
 }
 
 /* helpers to explicitly place items into left or middle column */
@@ -244,13 +251,16 @@
 
 /* place a control into the middle column and vertically span rows 2-3 (central area) */
 .buttonMidCell {
-  grid-column: 2 / 3;
-  grid-row: 2 / 4; /* span middle two rows */
+  /* Ensure any legacy usage of this helper moves a control into the right column
+     and spans the grid height so it ends up vertically centered instead of
+     overlapping the middle column. */
+  grid-column: 3 / 4;
+  grid-row: 1 / -1; /* span full height */
   display: flex;
   align-items: center;
   justify-content: center;
-  /* small upward nudge to better center the button among inputs without changing any other layout */
-  transform: translateY(-12px);
+  /* small downward nudge so the button sits slightly lower relative to the inputs */
+  transform: translateY(140px);
 }
 
 .applyBadge {
