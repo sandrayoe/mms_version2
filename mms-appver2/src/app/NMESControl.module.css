@@ -217,7 +217,7 @@
 
 .inputParamsNudge {
   position: relative !important;
-  left: 2px !important;
+  left: 20px !important; /* increased nudge from 2px -> 20px for visibility */
 }
 
 .applyBadge {
