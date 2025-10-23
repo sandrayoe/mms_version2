@@ -216,7 +216,8 @@
 }
 
 .inputParamsNudge {
-  transform: translateX(2px) !important;
+  position: relative !important;
+  left: 2px !important;
 }
 
 .applyBadge {
