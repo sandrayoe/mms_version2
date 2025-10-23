@@ -237,3 +237,23 @@
   text-align: left;
 }
 
+.modifyArea {
+  display: flex;
+  align-items: center;
+}
+
+.applyBadge {
+  background: #d4f7dc; /* soft green */
+  color: #0b6623;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  animation: badgePop 0.4s ease-out;
+}
+
+@keyframes badgePop {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+

@@ -82,6 +82,10 @@ const SensorPanel: React.FC = () => {
     arr.push({ time, params });
   };
 
+  // Visual cue for last applied snapshot
+  const [lastAppliedTime, setLastAppliedTime] = useState<number | null>(null);
+  const [showApplied, setShowApplied] = useState(false);
+
   // Manual snapshot application: user presses "Modify" to record parameter changes into snapshots
   const handleApplyModify = () => {
     if (!isRecording) {
@@ -97,6 +101,9 @@ const SensorPanel: React.FC = () => {
         pvv2: pvv2 || 'N/A',
         pvv3: pvv3 || 'N/A',
       });
+      setLastAppliedTime(t);
+      setShowApplied(true);
+      setTimeout(() => setShowApplied(false), 1500);
       window.alert('Parameter snapshot captured (not recording).');
       return;
     }
@@ -113,6 +120,9 @@ const SensorPanel: React.FC = () => {
       pvv2: pvv2 || 'N/A',
       pvv3: pvv3 || 'N/A',
     });
+    setLastAppliedTime(latestTime);
+    setShowApplied(true);
+    setTimeout(() => setShowApplied(false), 1500);
   };
   // diagnostics removed from UI; use BIN_MS to control displayed smoothing
   // Diagnostics for timing and sample indexing
@@ -522,6 +532,16 @@ const SensorPanel: React.FC = () => {
                   <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => setPvv3(e.target.value)} />
                 </label>
               </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-start', marginTop: 8 }} className={styles.modifyArea}>
+                <button className={styles.button} onClick={handleApplyModify} disabled={!isConnected}>
+                  Modify (apply params)
+                </button>
+                <div style={{ marginLeft: 10 }} aria-live="polite">
+                  {showApplied && lastAppliedTime !== null && (
+                    <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
+                  )}
+                </div>
+              </div>
             </div>
             <div className={styles.buttonContainer}>
               <button className={styles.button} onClick={handleStartIMU} disabled={!isConnected || isMeasuring}>
@@ -536,9 +556,7 @@ const SensorPanel: React.FC = () => {
               <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
                 Stop Recording
               </button>
-              <button className={styles.button} onClick={handleApplyModify} disabled={!isConnected}>
-                Modify (apply params)
-              </button>
+              {/* Modify button moved next to parameter inputs */}
               <button
                 className={styles.button}
                 onClick={() => {
