@@ -199,7 +199,7 @@
 .modifyArea {
   display: flex;
   align-items: center;
-  margin-left: 6px; /* nudge the whole area slightly to the right */
+  margin-left: 10px; /* nudge the whole area slightly to the right */
 }
 
 .modifyAreaFixed {
