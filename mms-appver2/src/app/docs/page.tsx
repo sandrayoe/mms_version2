@@ -98,10 +98,11 @@ const DocsPage: React.FC = () => {
           When recording is active the UI stores the binned/averaged points in a recording buffer. The CSV file produced by the Save action has the following structure:
         </p>
         <ul>
-          <li>a. Header row: <code>time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pvv3,patientName,sensorName</code></li>
-          <li>b. Rows: one row per recorded time point (the union of sensor1 and sensor2 times). If a sensor lacks a value at a time point the cell is left empty.</li>
-          <li>c. Parameter snapshots: the code records parameter snapshots (frequency, motorPoints, position, PVVs, etc.) at times when the user applies them. For each CSV row the snapshot whose time is the latest ≤ row time is used to populate parameter columns.</li>
-          <li>d. Markers: after the main CSV rows a small markers section is appended containing any start/stop markers recorded during the session. When you press the <em>Start Recording</em> button the app records a <code>{'{'} type: 'start' {'}'}</code> marker at the current chart time; when you press <em>Stop Recording</em> it appends a matching <code>{'{'} type: 'stop' {'}'}</code> marker. These markers are included in the CSV so you can easily align recordings to events in post-processing.</li>
+          <li>a. Filename: taken from patientName, sensorName, and timestamps.</li>  
+          <li>b. Header row: <code>time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pvv3,patientName,sensorName</code></li>
+          <li>c. Rows: one row per recorded time point (the union of sensor1 and sensor2 times). If a sensor lacks a value at a time point the cell is left empty.</li>
+          <li>d. Parameter snapshots: the code records parameter snapshots (frequency, motorPoints, position, PVVs, etc.) at times when the user applies them. For each CSV row the snapshot whose time is the latest ≤ row time is used to populate parameter columns.</li>
+          <li>e. Markers: after the main CSV rows a small markers section is appended containing any start/stop markers recorded during the session. When you press the <em>Start Recording</em> button the app records a <code>{'{'} type: 'start' {'}'}</code> marker at the current chart time; when you press <em>Stop Recording</em> it appends a matching <code>{'{'} type: 'stop' {'}'}</code> marker. These markers are included in the CSV so you can easily align recordings to events in post-processing.</li>
         </ul>
 
         <div style={{ marginTop: 8, padding: 12, background: '#fff8e1', borderRadius: 6 }}>
@@ -135,7 +136,7 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
       <section style={{ marginTop: 20 }}>
         <h2><b>7. Troubleshooting & diagnostic tips</b></h2>
         <ul>
-          <li>a. If the chart looks flat or values are all zeros: verify the device is sending notifications and the Bluetooth service/characteristic UUIDs match the device.</li>
+          <li>a. If the chart looks flat or values are all zeros: verify the device is charged (sufficiently) and is sending notifications. Otherwise, check the connections.</li>
           <li>b. To inspect raw per-notification samples, set <code>BIN_MS = 0</code> and enable logging in <code>BluetoothContext.handleIMUData</code>.</li>
           <li>c. CSV missing parameters: ensure you pressed <em>Input Parameters</em> (it records snapshots) before starting a recording, otherwise the latest UI values will be used as fallback.</li>
         </ul>
