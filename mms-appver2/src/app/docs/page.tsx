@@ -72,7 +72,7 @@ const DocsPage: React.FC = () => {
           component displays a sliding window of the most recent <code>CHART_WINDOW_SIZE </code>
           samples (default <strong>200 samples</strong>), so the visible time span is roughly
           200 * 20 ms ≈ 4 seconds at the default assumptions. These numbers are configurable in
-          <code>src/app/NMESControl.tsx</code> if you need a wider/narrower window or a different timebase.
+          <code> src/app/NMESControl.tsx</code> if you need a wider/narrower window or a different timebase.
         </p>
       </section>
 
@@ -146,7 +146,6 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
         <ul>
           <li><code>src/app/BluetoothContext.tsx</code> — Bluetooth connection, parsing, per-sample timestamps.</li>
           <li><code>src/app/NMESControl.tsx</code> — UI polling, binning/averaging, charting, recording and CSV export.</li>
-          <li><code>mms-appver2/docs/README.md</code> — this text's companion file (quick edits allowed).</li>
         </ul>
       </section>
 
