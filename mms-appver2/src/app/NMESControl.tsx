@@ -403,6 +403,22 @@ const SensorPanel: React.FC = () => {
 
   // Recording controls
   const handleStartRecording = () => {
+    // Validate required input parameters before starting recording. If missing,
+    // show a popup to remind the user to fill them.
+    const requiredChecks: Array<{ key: string; label: string; value: string }> = [
+      { key: 'frequency', label: 'Frequency', value: frequency },
+      { key: 'motorPoints', label: 'Motor points', value: motorPoints },
+      { key: 'position', label: 'Position', value: position },
+      { key: 'pvv1', label: 'PVV1', value: pvv1 },
+      { key: 'pvv2', label: 'PVV2', value: pvv2 },
+      { key: 'pvv3', label: 'PVV3', value: pvv3 },
+    ];
+    const missing = requiredChecks.filter((r) => !r.value || r.value.trim() === '').map((r) => r.label);
+    if (missing.length) {
+      window.alert(`Please fill the required fields before starting recording: ${missing.join(', ')}`);
+      return;
+    }
+
     recordedRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(true);
     setIsPausedRecording(false);
@@ -621,7 +637,7 @@ const SensorPanel: React.FC = () => {
                 <button className={styles.button} onClick={handleStopIMU} disabled={!isConnected || !isMeasuring}>
                   Stop Sensor(s)
                 </button>
-                <button className={styles.button} onClick={handleStartRecording} disabled={!isConnected || !isMeasuring || isRecording || !paramsSubmitted}>
+                <button className={styles.button} onClick={handleStartRecording} disabled={!isConnected || !isMeasuring || isRecording}>
                   Start Recording
                 </button>
                 <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
