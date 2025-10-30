@@ -22,6 +22,7 @@ const DocsPage: React.FC = () => {
             Charts are implemented with Recharts.</li>
           <li>d. Default time-binning/averaging of incoming samples (configurable BIN_MS; 0 if it is not required).</li>
           <li>e. Start/stop recording of the (binned) samples and download them as CSV, with parameter snapshots and markers included.</li>
+          <li>f. Pause/resume recording. After recording started, the process can be paused and resumed, with the paused data will be discarded.</li>
         </ul>
       </section>
 
@@ -152,7 +153,7 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
 
       <div style={{ height: 28 }} />
       <div style={{ fontSize: 13, color: '#666' }}>
-        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 28 Oct 2025.
+        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 30 Oct 2025.
       </div>
     </div>
   );
