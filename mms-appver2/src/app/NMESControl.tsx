@@ -429,9 +429,21 @@ const SensorPanel: React.FC = () => {
 
   const handleStopRecording = () => {
     setIsRecording(false);
+    setIsPausedRecording(false);
     // add a stop marker at the current chart time (fallback to 0)
     const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
     setMarkers((prev) => [...prev, { time: latestTime, type: "stop" }]);
+  };
+
+  // Combined handler: if not recording, attempt to start (with validation). If recording,
+  // toggle pause/resume.
+  const handleStartOrTogglePause = () => {
+    if (!isRecording) {
+      handleStartRecording();
+      return;
+    }
+    // recording is active -> toggle pause/resume
+    handleTogglePauseRecording();
   };
 
   // Toggle pause/resume for recording. When paused, incoming samples are still
@@ -637,14 +649,11 @@ const SensorPanel: React.FC = () => {
                 <button className={styles.button} onClick={handleStopIMU} disabled={!isConnected || !isMeasuring}>
                   Stop Sensor(s)
                 </button>
-                <button className={styles.button} onClick={handleStartRecording} disabled={!isConnected || !isMeasuring || isRecording}>
-                  Start Recording
+                <button className={styles.button} onClick={handleStartOrTogglePause} disabled={!isConnected || !isMeasuring}>
+                  {!isRecording ? 'Start Recording' : (isPausedRecording ? 'Resume Recording' : 'Pause Recording')}
                 </button>
                 <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
                   Stop Recording
-                </button>
-                <button className={styles.button} onClick={handleTogglePauseRecording} disabled={!isRecording}>
-                  {isPausedRecording ? 'Resume Recording' : 'Pause Recording'}
                 </button>
               </div>
 
