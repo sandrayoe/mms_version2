@@ -52,9 +52,11 @@ const SensorPanel: React.FC = () => {
 
   // Recording state & storage for later download
   const [isRecording, setIsRecording] = useState(false);
+  const [isPausedRecording, setIsPausedRecording] = useState(false);
+  const isPausedRecordingRef = useRef<boolean>(isPausedRecording);
   const recordedRef = useRef<{ sensor1: { time: number; sensorValue: number }[]; sensor2: { time: number; sensorValue: number }[] }>({ sensor1: [], sensor2: [] });
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
-  type Marker = { time: number; type: "start" | "stop" };
+  type Marker = { time: number; type: "start" | "stop" | "pause" | "resume" };
   const [markers, setMarkers] = useState<Marker[]>([]);
 
   // User inputs for file naming and parameters
@@ -189,6 +191,11 @@ const SensorPanel: React.FC = () => {
     imuDataRefLocal.current = imuData;
   }, [imuData]);
 
+  // Keep a ref in sync with the pause state so the interval closure sees updates
+  useEffect(() => {
+    isPausedRecordingRef.current = isPausedRecording;
+  }, [isPausedRecording]);
+
   // Poll the imuData ref at a coarser interval and batch-append new samples for smoother UI updates.
   // This reduces rendering churn while still providing near-real-time data. We also handle
   // the case where the provider arrays shrink (rolling buffer) by resetting prev indices.
@@ -290,11 +297,11 @@ const SensorPanel: React.FC = () => {
       // Enqueue raw parsed samples for incremental flush via rAF
       if (toAppend1.length) {
         queuedS1Ref.current.push(...toAppend1.map(p => ({ ...p })));
-        if (isRecording) recordedRef.current.sensor1.push(...toAppend1.map(p => ({ ...p })));
+        if (isRecording && !isPausedRecordingRef.current) recordedRef.current.sensor1.push(...toAppend1.map(p => ({ ...p })));
       }
       if (toAppend2.length) {
         queuedS2Ref.current.push(...toAppend2.map(p => ({ ...p })));
-        if (isRecording) recordedRef.current.sensor2.push(...toAppend2.map(p => ({ ...p })));
+        if (isRecording && !isPausedRecordingRef.current) recordedRef.current.sensor2.push(...toAppend2.map(p => ({ ...p })));
       }
 
       // Start flush loop if not already running
@@ -398,6 +405,7 @@ const SensorPanel: React.FC = () => {
   const handleStartRecording = () => {
     recordedRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(true);
+    setIsPausedRecording(false);
     // add a start marker at the current chart time (fallback to 0)
     const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
     setMarkers((prev) => [...prev, { time: latestTime, type: "start" }]);
@@ -408,6 +416,16 @@ const SensorPanel: React.FC = () => {
     // add a stop marker at the current chart time (fallback to 0)
     const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
     setMarkers((prev) => [...prev, { time: latestTime, type: "stop" }]);
+  };
+
+  // Toggle pause/resume for recording. When paused, incoming samples are still
+  // displayed on the charts but are not appended to the recorded buffers.
+  const handleTogglePauseRecording = () => {
+    if (!isRecording) return;
+    const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : (sensor2Data.length ? sensor2Data[sensor2Data.length - 1].time : 0);
+    const newPaused = !isPausedRecording;
+    setIsPausedRecording(newPaused);
+    setMarkers((prev) => [...prev, { time: latestTime, type: newPaused ? "pause" : "resume" }]);
   };
 
   const handleSaveRecording = () => {
@@ -481,14 +499,6 @@ const SensorPanel: React.FC = () => {
   const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
   const metaVals = [escapeCSV(patientName || 'N/A'), escapeCSV(sensorName || 'N/A')];
   csv += `${t},${v1},${v2},${paramVals.join(',')},${metaVals.join(',')}\n`;
-    }
-
-    // Append markers section so time markers are preserved in the recording file
-    if (markers && markers.length) {
-      csv += '\nmarkers,type,time\n';
-      for (const m of markers) {
-        csv += `${m.type},${m.type},${m.time}\n`;
-      }
     }
 
     // Append markers section so time markers are preserved in the recording file
@@ -616,6 +626,9 @@ const SensorPanel: React.FC = () => {
                 </button>
                 <button className={styles.button} onClick={handleStopRecording} disabled={!isRecording}>
                   Stop Recording
+                </button>
+                <button className={styles.button} onClick={handleTogglePauseRecording} disabled={!isRecording}>
+                  {isPausedRecording ? 'Resume Recording' : 'Pause Recording'}
                 </button>
               </div>
 
