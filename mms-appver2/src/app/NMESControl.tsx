@@ -760,7 +760,7 @@ const SensorPanel: React.FC = () => {
                   <LineChart data={sensor1Data}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                    <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} tickFormatter={(v) => Number(v).toFixed(1)} />
+                    <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} tickFormatter={(v) => String(Math.round(Number(v)))} />
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} formatter={(value) => Number(value).toFixed(2)} />
                     <Legend />
                     <Line type="linear" dataKey="sensorValue" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
@@ -777,7 +777,7 @@ const SensorPanel: React.FC = () => {
                   <LineChart data={sensor1Data}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                    <YAxis domain={[0, 50]} tickCount={6} tickFormatter={(v) => Number(v).toFixed(1)} />
+                    <YAxis domain={[0, 50]} tickCount={6} tickFormatter={(v) => String(Math.round(Number(v)))} />
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} formatter={(value) => Number(value).toFixed(2)} />
                     <Legend />
                     <Line type="linear" dataKey="sensorValue" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
@@ -795,7 +795,7 @@ const SensorPanel: React.FC = () => {
                   <LineChart data={sensor2Data}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                    <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} tickFormatter={(v) => Number(v).toFixed(1)} />
+                    <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} tickFormatter={(v) => String(Math.round(Number(v)))} />
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} formatter={(value) => Number(value).toFixed(2)} />
                     <Legend />
                     <Line type="linear" dataKey="sensorValue" stroke="#82ca9d" strokeWidth={2} name="Sensor 2" dot={false} isAnimationActive={false} />
@@ -812,7 +812,7 @@ const SensorPanel: React.FC = () => {
                   <LineChart data={sensor2Data}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                    <YAxis domain={[0, 50]} tickCount={6} tickFormatter={(v) => Number(v).toFixed(1)} />
+                    <YAxis domain={[0, 50]} tickCount={6} tickFormatter={(v) => String(Math.round(Number(v)))} />
                     <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} formatter={(value) => Number(value).toFixed(2)} />
                     <Legend />
                     <Line type="linear" dataKey="sensorValue" stroke="#82ca9d" strokeWidth={2} name="Sensor 2" dot={false} isAnimationActive={false} />
