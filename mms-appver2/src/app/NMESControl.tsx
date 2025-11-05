@@ -7,7 +7,7 @@ import styles from "./NMESControl.module.css";
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine } from "recharts";
 
 const SensorPanel: React.FC = () => {
-  const { isConnected, imuData, startIMU, stopIMU, clearIMU, getSpikeEvents, clearSpikeEvents } = useBluetooth();
+  const { isConnected, imuData, startIMU, stopIMU, clearIMU } = useBluetooth();
 
   const [sensor1Data, setSensor1Data] = useState<{ time: number; sensorValue: number }[]>([]);
   const [sensor2Data, setSensor2Data] = useState<{ time: number; sensorValue: number }[]>([]);
@@ -602,88 +602,8 @@ const SensorPanel: React.FC = () => {
   };
 
   // Download spike/burst event log exposed by BluetoothContext
-  const handleDownloadSpikeLogJSON = () => {
-    try {
-      const events = getSpikeEvents() ?? [];
-      if (!events || events.length === 0) {
-        window.alert('No spike events recorded.');
-        return;
-      }
-      const blob = new Blob([JSON.stringify(events, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const d = new Date();
-      const pad = (n: number, w = 2) => String(n).padStart(w, '0');
-      const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-      a.download = `spike_events_${patientName || 'NA'}_${sensorName || 'NA'}_${iso}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('Failed to download spike log JSON', e);
-      window.alert('Failed to download spike log. See console for details.');
-    }
-  };
-
-  const handleDownloadSpikeLogCSV = () => {
-    try {
-      const events = getSpikeEvents() ?? [];
-      if (!events || events.length === 0) {
-        window.alert('No spike events recorded.');
-        return;
-      }
-      // CSV header
-      const header = ['id','type','time','len','maxMag','sampleCount','perSampleInterval','recentCount','windowMs','raw1s','raw2s'];
-      let csv = header.join(',') + '\n';
-      for (const e of events) {
-        const raw1 = Array.isArray(e.raw1s) ? e.raw1s.join(';') : '';
-        const raw2 = Array.isArray(e.raw2s) ? e.raw2s.join(';') : '';
-        const row = [
-          e.id ?? '',
-          e.type ?? '',
-          e.time ?? '',
-          e.len ?? '',
-          e.maxMag ?? '',
-          e.sampleCount ?? '',
-          e.perSampleInterval ?? '',
-          e.recentCount ?? '',
-          e.windowMs ?? '',
-          '"' + String(raw1).replace(/"/g, '""') + '"',
-          '"' + String(raw2).replace(/"/g, '""') + '"',
-        ];
-        csv += row.join(',') + '\n';
-      }
-      const blob = new Blob([csv], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const d = new Date();
-      const pad = (n: number, w = 2) => String(n).padStart(w, '0');
-      const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-      a.download = `spike_events_${patientName || 'NA'}_${sensorName || 'NA'}_${iso}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('Failed to download spike log CSV', e);
-      window.alert('Failed to download spike log. See console for details.');
-    }
-  };
-
-  const handleClearSpikeLog = () => {
-    const ok = window.confirm('Clear the in-memory spike event log?');
-    if (!ok) return;
-    try {
-      clearSpikeEvents();
-      window.alert('Spike event log cleared.');
-    } catch (e) {
-      console.error('Failed to clear spike log', e);
-      window.alert('Failed to clear spike log. See console for details.');
-    }
-  };
+  // Spike log export/clear handlers removed per request; spike events remain
+  // accessible programmatically via getSpikeEvents() / clearSpikeEvents() if needed.
 
   // Save validation state (computed each render)
   const hasRecordedData = (recordedRef.current.sensor1.length > 0) || (recordedRef.current.sensor2.length > 0);
@@ -823,11 +743,7 @@ const SensorPanel: React.FC = () => {
               Save Recording
             </button>
             <div style={{ height: 8 }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-              <button className={styles.button} onClick={handleDownloadSpikeLogJSON} disabled={isRecording}>Download Spike Log (JSON)</button>
-              <button className={styles.button} onClick={handleDownloadSpikeLogCSV} disabled={isRecording}>Download Spike Log (CSV)</button>
-              <button className={styles.button} onClick={handleClearSpikeLog} disabled={isRecording}>Clear Spike Log</button>
-            </div>
+            {/* Spike log download/clear buttons removed per request */}
           </div>
           </>
         )}

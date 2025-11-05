@@ -17,9 +17,6 @@ interface BluetoothContextType {
   startIMU: () => Promise<void>;
   stopIMU: () => Promise<void>;
   clearIMU: () => void;
-  // Retrieve and clear in-memory spike/burst event log
-  getSpikeEvents: () => any[];
-  clearSpikeEvents: () => void;
 }
 
 export const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -54,9 +51,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Recent raw-payload hash map to debounce duplicate windows for display.
   const DUP_WINDOW_MS = 250; // if identical raw payload seen within this window, skip display append
   const recentRawHashRef = useRef<Map<string, number>>(new Map());
-  // In-memory bounded event log for spikes/bursts so UI can request and persist them
-  const spikeEventsRef = useRef<any[]>([]);
-  const MAX_SPIKE_EVENTS = 1000;
+  // NOTE: spike/burst forensic log removed per user request. Keep dedupe and
+  // display behavior; providers no longer record a separate in-memory spike log.
 
   // Nordic UART Service UUIDs
   const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -303,27 +299,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         // Condition: large magnitude spike in this notification
         if (maxMag >= SPIKE_MAG_THRESHOLD) {
-          // Record spike event to in-memory log (bounded)
-          try {
-            spikeEventsRef.current.push({
-              id: `${baseTs}-${Math.random().toString(36).slice(2,8)}`,
-              type: 'spike',
-              time: baseTs,
-              len: rawBytes.length,
-              maxMag,
-              sampleCount,
-              perSampleInterval,
-              raw1s: (raw1s || []).slice(0, 16),
-              raw2s: (raw2s || []).slice(0, 16),
-              deduped: isDuplicateWindow || false,
-            });
-            if (spikeEventsRef.current.length > MAX_SPIKE_EVENTS) {
-              spikeEventsRef.current = spikeEventsRef.current.slice(-MAX_SPIKE_EVENTS);
-            }
-          } catch (e) {
-            // ignore logging storage errors
-          }
-          // Lightweight console log so occurrences are visible during runs
+          // Spike detected. We no longer record a separate in-memory spike log;
+          // keep a lightweight console notification only.
           try {
             console.log('IMU_EVENT spike:', { time: baseTs.toFixed(3), maxMag, sampleCount, deduped: isDuplicateWindow });
           } catch (e) {}
@@ -331,17 +308,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         // Condition: large sampleCount or very small per-sample interval
         if (sampleCount >= BURST_SAMPLE_COUNT_THRESHOLD || perSampleInterval <= SMALL_INTERVAL_THRESHOLD) {
-          try {
-            spikeEventsRef.current.push({
-              id: `${baseTs}-${Math.random().toString(36).slice(2,8)}`,
-              type: 'burst',
-              time: baseTs,
-              sampleCount,
-              perSampleInterval,
-              recentCount: recentNotificationsRef.current.length,
-            });
-            if (spikeEventsRef.current.length > MAX_SPIKE_EVENTS) spikeEventsRef.current = spikeEventsRef.current.slice(-MAX_SPIKE_EVENTS);
-          } catch (e) {}
+          // Burst detected; do not record to an in-memory log, but keep console notice
           try {
             console.log('IMU_EVENT burst:', { time: baseTs.toFixed(3), sampleCount, perSampleInterval });
           } catch (e) {}
@@ -349,16 +316,6 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         // Condition: many notifications recently -> log a burst event
         if (recentNotificationsRef.current.length >= RECENT_COUNT_THRESHOLD) {
-          try {
-            spikeEventsRef.current.push({
-              id: `${baseTs}-${Math.random().toString(36).slice(2,8)}`,
-              type: 'rapid_notifications',
-              time: baseTs,
-              recentCount: recentNotificationsRef.current.length,
-              windowMs: RECENT_WINDOW_MS,
-            });
-            if (spikeEventsRef.current.length > MAX_SPIKE_EVENTS) spikeEventsRef.current = spikeEventsRef.current.slice(-MAX_SPIKE_EVENTS);
-          } catch (e) {}
           try {
             console.log('IMU_EVENT rapid_notifications:', { time: baseTs.toFixed(3), recentCount: recentNotificationsRef.current.length });
           } catch (e) {}
@@ -368,10 +325,10 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       setImuData(prev => {
-        // If this notification is a duplicate window (recent identical raw
-        // payload), skip appending to the display buffers to avoid repeated
-        // spikes showing up visually. We still record the full event in
-        // spikeEventsRef above for forensic analysis.
+  // If this notification is a duplicate window (recent identical raw
+  // payload), skip appending to the display buffers to avoid repeated
+  // spikes showing up visually. Note: we no longer record a separate
+  // in-memory spike/burst forensic log; display suppression remains.
         if (isDuplicateWindow) {
           try { console.log('IMU_EVENT deduped_display', { time: baseTs.toFixed(3) }); } catch (e) {}
           return prev;
@@ -462,14 +419,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
-  // Expose spike event helpers
-  const getSpikeEvents = () => {
-    return spikeEventsRef.current.slice();
-  };
-
-  const clearSpikeEvents = () => {
-    spikeEventsRef.current = [];
-  };
+  // (Spike/burst forensic log removed; no exported helpers.)
 
   return (
     <BluetoothContext.Provider value={{
@@ -481,8 +431,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       startIMU,
       stopIMU,
       clearIMU,
-      getSpikeEvents,
-      clearSpikeEvents,
+      // spike helpers removed
     }}>
       {children}
     </BluetoothContext.Provider>
