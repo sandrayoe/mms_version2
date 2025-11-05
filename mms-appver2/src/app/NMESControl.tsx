@@ -19,8 +19,9 @@ const SensorPanel: React.FC = () => {
   // Bin width in milliseconds for simple time-binning/averaging of incoming samples.
   // Set to 0 to disable binning and keep raw samples. Typical useful values: 5-20 ms.
   const BIN_MS = 0;
-  // Display-only clamp for aggregated/charted values to avoid large visual spikes
-  const AGG_DISPLAY_CLIP_MAX = 1000;
+  // NOTE: previously we clipped aggregated/charted values to 1000 to reduce
+  // visual jitter. Per request, do not clip values here so originals are
+  // preserved for display and recording.
 
   const [isMeasuring, setIsMeasuring] = useState(false);
   const prevImuLenRef = useRef({ s1: 0, s2: 0 });
@@ -305,10 +306,9 @@ const SensorPanel: React.FC = () => {
 
       // Enqueue aggregated points for chart flush, and store aggregated metadata for CSV
       if (toAppend1.length) {
-        // Prepare display-only values: drop any aggregated point whose avg exceeds the threshold
-        const display1 = toAppend1
-          .filter(p => p.sensorValue <= AGG_DISPLAY_CLIP_MAX)
-          .map(p => ({ time: p.time, sensorValue: p.sensorValue }));
+        // Prepare display values without clipping so original aggregated values
+        // are preserved in the UI and recordings.
+        const display1 = toAppend1.map(p => ({ time: p.time, sensorValue: p.sensorValue }));
         queuedS1Ref.current.push(...display1);
         // Append raw samples (pre-binning) to recorded raw buffer so CSV keeps full fidelity
         if (isRecording && !isPausedRecordingRef.current && toAppend1Raw.length) {
@@ -316,19 +316,17 @@ const SensorPanel: React.FC = () => {
         }
         // Also save aggregated rows (original values) so CSV reproduces chart if desired
         if (isRecording && !isPausedRecordingRef.current) {
-          recordedAggRef.current.sensor1.push(...toAppend1.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max, spike: (p.max > AGG_DISPLAY_CLIP_MAX) })));
+          recordedAggRef.current.sensor1.push(...toAppend1.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max })));
         }
       }
       if (toAppend2.length) {
-        const display2 = toAppend2
-          .filter(p => p.sensorValue <= AGG_DISPLAY_CLIP_MAX)
-          .map(p => ({ time: p.time, sensorValue: p.sensorValue }));
+        const display2 = toAppend2.map(p => ({ time: p.time, sensorValue: p.sensorValue }));
         queuedS2Ref.current.push(...display2);
         if (isRecording && !isPausedRecordingRef.current && toAppend2Raw.length) {
           recordedRef.current.sensor2.push(...toAppend2Raw.map(p => ({ time: p.time, sensorValue: p.sensorValue })));
         }
         if (isRecording && !isPausedRecordingRef.current) {
-          recordedAggRef.current.sensor2.push(...toAppend2.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max, spike: (p.max > AGG_DISPLAY_CLIP_MAX) })));
+          recordedAggRef.current.sensor2.push(...toAppend2.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max })));
         }
       }
 
