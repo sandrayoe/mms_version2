@@ -7,7 +7,7 @@ import styles from "./NMESControl.module.css";
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine } from "recharts";
 
 const SensorPanel: React.FC = () => {
-  const { isConnected, imuData, startIMU, stopIMU, clearIMU } = useBluetooth();
+  const { isConnected, imuData, startIMU, stopIMU, clearIMU, getSpikeEvents, clearSpikeEvents } = useBluetooth();
 
   const [sensor1Data, setSensor1Data] = useState<{ time: number; sensorValue: number }[]>([]);
   const [sensor2Data, setSensor2Data] = useState<{ time: number; sensorValue: number }[]>([]);
@@ -18,7 +18,9 @@ const SensorPanel: React.FC = () => {
 
   // Bin width in milliseconds for simple time-binning/averaging of incoming samples.
   // Set to 0 to disable binning and keep raw samples. Typical useful values: 5-20 ms.
-  const BIN_MS = 20;
+  const BIN_MS = 0;
+  // Display-only clamp for aggregated/charted values to avoid large visual spikes
+  const AGG_DISPLAY_CLIP_MAX = 1000;
 
   const [isMeasuring, setIsMeasuring] = useState(false);
   const prevImuLenRef = useRef({ s1: 0, s2: 0 });
@@ -55,6 +57,9 @@ const SensorPanel: React.FC = () => {
   const [isPausedRecording, setIsPausedRecording] = useState(false);
   const isPausedRecordingRef = useRef<boolean>(isPausedRecording);
   const recordedRef = useRef<{ sensor1: { time: number; sensorValue: number }[]; sensor2: { time: number; sensorValue: number }[] }>({ sensor1: [], sensor2: [] });
+  // Aggregated (chart) rows stored alongside raw recordings so CSV can reproduce chart
+  // Each aggregated row may be flagged as a spike (display suppressed) via `spike`.
+  const recordedAggRef = useRef<{ sensor1: { time: number; sensorValue: number; count: number; min: number; max: number; spike?: boolean }[]; sensor2: { time: number; sensorValue: number; count: number; min: number; max: number; spike?: boolean }[] }>({ sensor1: [], sensor2: [] });
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   type Marker = { time: number; type: "start" | "stop" | "pause" | "resume" };
   const [markers, setMarkers] = useState<Marker[]>([]);
@@ -264,44 +269,67 @@ const SensorPanel: React.FC = () => {
       const toAppend1Raw = pushWithTs(newS1 as any[]);
       const toAppend2Raw = pushWithTs(newS2 as any[]);
 
-      // Simple binning: group samples into BIN_MS millisecond bins and average time/value
-      const binAndAverage = (samples: { time: number; sensorValue: number }[], binMs: number) => {
-        if (!samples || samples.length === 0) return [] as { time: number; sensorValue: number }[];
-        if (!binMs || binMs <= 0) return samples;
-        const map = new Map<number, { sumVal: number; sumTime: number; count: number }>();
+      // Binning with aggregate stats: returns avg time/value plus count/min/max for CSV
+      const binAndAggregate = (samples: { time: number; sensorValue: number }[], binMs: number) => {
+        if (!samples || samples.length === 0) return [] as { time: number; sensorValue: number; count: number; min: number; max: number }[];
+        if (!binMs || binMs <= 0) {
+          return samples.map((s) => ({ time: s.time, sensorValue: s.sensorValue, count: 1, min: s.sensorValue, max: s.sensorValue }));
+        }
+        const map = new Map<number, { sumVal: number; sumTime: number; count: number; min: number; max: number }>();
         for (const s of samples) {
           const key = Math.floor((s.time * 1000) / binMs);
-          const cur = map.get(key) ?? { sumVal: 0, sumTime: 0, count: 0 };
+          const cur = map.get(key) ?? { sumVal: 0, sumTime: 0, count: 0, min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY };
           cur.sumVal += s.sensorValue;
           cur.sumTime += s.time;
           cur.count += 1;
+          cur.min = Math.min(cur.min, s.sensorValue);
+          cur.max = Math.max(cur.max, s.sensorValue);
           map.set(key, cur);
         }
         const keys = Array.from(map.keys()).sort((a, b) => a - b);
-        const out: { time: number; sensorValue: number }[] = [];
+        const out: { time: number; sensorValue: number; count: number; min: number; max: number }[] = [];
         for (const k of keys) {
           const v = map.get(k)!;
-          out.push({ time: v.sumTime / v.count, sensorValue: v.sumVal / v.count });
+          out.push({ time: v.sumTime / v.count, sensorValue: v.sumVal / v.count, count: v.count, min: v.min, max: v.max });
         }
         return out;
       };
 
-      const toAppend1 = BIN_MS > 0 ? binAndAverage(toAppend1Raw, BIN_MS) : toAppend1Raw;
-      const toAppend2 = BIN_MS > 0 ? binAndAverage(toAppend2Raw, BIN_MS) : toAppend2Raw;
+  const toAppend1 = BIN_MS > 0 ? binAndAggregate(toAppend1Raw, BIN_MS) : binAndAggregate(toAppend1Raw, BIN_MS);
+  const toAppend2 = BIN_MS > 0 ? binAndAggregate(toAppend2Raw, BIN_MS) : binAndAggregate(toAppend2Raw, BIN_MS);
 
   appendedTotal = (toAppend1.length + toAppend2.length);
       appendedPerTimeStep = Math.max(toAppend1.length, toAppend2.length);
 
       // Helper clampAppend is defined at component scope (see below) and will be used by the flush loop.
 
-      // Enqueue raw parsed samples for incremental flush via rAF
+      // Enqueue aggregated points for chart flush, and store aggregated metadata for CSV
       if (toAppend1.length) {
-        queuedS1Ref.current.push(...toAppend1.map(p => ({ ...p })));
-        if (isRecording && !isPausedRecordingRef.current) recordedRef.current.sensor1.push(...toAppend1.map(p => ({ ...p })));
+        // Prepare display-only values: drop any aggregated point whose avg exceeds the threshold
+        const display1 = toAppend1
+          .filter(p => p.sensorValue <= AGG_DISPLAY_CLIP_MAX)
+          .map(p => ({ time: p.time, sensorValue: p.sensorValue }));
+        queuedS1Ref.current.push(...display1);
+        // Append raw samples (pre-binning) to recorded raw buffer so CSV keeps full fidelity
+        if (isRecording && !isPausedRecordingRef.current && toAppend1Raw.length) {
+          recordedRef.current.sensor1.push(...toAppend1Raw.map(p => ({ time: p.time, sensorValue: p.sensorValue })));
+        }
+        // Also save aggregated rows (original values) so CSV reproduces chart if desired
+        if (isRecording && !isPausedRecordingRef.current) {
+          recordedAggRef.current.sensor1.push(...toAppend1.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max, spike: (p.max > AGG_DISPLAY_CLIP_MAX) })));
+        }
       }
       if (toAppend2.length) {
-        queuedS2Ref.current.push(...toAppend2.map(p => ({ ...p })));
-        if (isRecording && !isPausedRecordingRef.current) recordedRef.current.sensor2.push(...toAppend2.map(p => ({ ...p })));
+        const display2 = toAppend2
+          .filter(p => p.sensorValue <= AGG_DISPLAY_CLIP_MAX)
+          .map(p => ({ time: p.time, sensorValue: p.sensorValue }));
+        queuedS2Ref.current.push(...display2);
+        if (isRecording && !isPausedRecordingRef.current && toAppend2Raw.length) {
+          recordedRef.current.sensor2.push(...toAppend2Raw.map(p => ({ time: p.time, sensorValue: p.sensorValue })));
+        }
+        if (isRecording && !isPausedRecordingRef.current) {
+          recordedAggRef.current.sensor2.push(...toAppend2.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max, spike: (p.max > AGG_DISPLAY_CLIP_MAX) })));
+        }
       }
 
       // Start flush loop if not already running
@@ -371,7 +399,8 @@ const SensorPanel: React.FC = () => {
       setIsRecording(false);
       setSensor1Data([]);
       setSensor2Data([]);
-      recordedRef.current = { sensor1: [], sensor2: [] };
+  recordedRef.current = { sensor1: [], sensor2: [] };
+  recordedAggRef.current = { sensor1: [], sensor2: [] };
       prevImuLenRef.current = { s1: 0, s2: 0 };
       sampleIndexRef.current = 0;
     }
@@ -385,7 +414,8 @@ const SensorPanel: React.FC = () => {
     // Clear provider buffer so we start fresh
     clearIMU();
     prevImuLenRef.current = { s1: 0, s2: 0 };
-    recordedRef.current = { sensor1: [], sensor2: [] };
+  recordedRef.current = { sensor1: [], sensor2: [] };
+  recordedAggRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(false);
     sampleIndexRef.current = 0;
     // Ensure session-relative time restarts at 0 for new measurement
@@ -419,7 +449,8 @@ const SensorPanel: React.FC = () => {
       return;
     }
 
-    recordedRef.current = { sensor1: [], sensor2: [] };
+  recordedRef.current = { sensor1: [], sensor2: [] };
+  recordedAggRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(true);
     setIsPausedRecording(false);
     // add a start marker at the current chart time (fallback to 0)
@@ -537,6 +568,20 @@ const SensorPanel: React.FC = () => {
       }
     }
 
+    // Append aggregated (chart) rows so the CSV can reproduce what was displayed
+    const agg1 = recordedAggRef.current.sensor1 ?? [];
+    const agg2 = recordedAggRef.current.sensor2 ?? [];
+    if ((agg1 && agg1.length) || (agg2 && agg2.length)) {
+      csv += '\naggregated_sensor1,time,avg,count,min,max,spike\n';
+      for (const a of agg1) {
+        csv += `${a.time},${a.sensorValue},${a.count},${a.min},${a.max},${a.spike ? '1' : '0'}\n`;
+      }
+      csv += '\naggregated_sensor2,time,avg,count,min,max,spike\n';
+      for (const a of agg2) {
+        csv += `${a.time},${a.sensorValue},${a.count},${a.min},${a.max},${a.spike ? '1' : '0'}\n`;
+      }
+    }
+
     // Helper to sanitize parts for filenames
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
 
@@ -556,6 +601,90 @@ const SensorPanel: React.FC = () => {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  };
+
+  // Download spike/burst event log exposed by BluetoothContext
+  const handleDownloadSpikeLogJSON = () => {
+    try {
+      const events = getSpikeEvents() ?? [];
+      if (!events || events.length === 0) {
+        window.alert('No spike events recorded.');
+        return;
+      }
+      const blob = new Blob([JSON.stringify(events, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const d = new Date();
+      const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+      const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+      a.download = `spike_events_${patientName || 'NA'}_${sensorName || 'NA'}_${iso}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to download spike log JSON', e);
+      window.alert('Failed to download spike log. See console for details.');
+    }
+  };
+
+  const handleDownloadSpikeLogCSV = () => {
+    try {
+      const events = getSpikeEvents() ?? [];
+      if (!events || events.length === 0) {
+        window.alert('No spike events recorded.');
+        return;
+      }
+      // CSV header
+      const header = ['id','type','time','len','maxMag','sampleCount','perSampleInterval','recentCount','windowMs','raw1s','raw2s'];
+      let csv = header.join(',') + '\n';
+      for (const e of events) {
+        const raw1 = Array.isArray(e.raw1s) ? e.raw1s.join(';') : '';
+        const raw2 = Array.isArray(e.raw2s) ? e.raw2s.join(';') : '';
+        const row = [
+          e.id ?? '',
+          e.type ?? '',
+          e.time ?? '',
+          e.len ?? '',
+          e.maxMag ?? '',
+          e.sampleCount ?? '',
+          e.perSampleInterval ?? '',
+          e.recentCount ?? '',
+          e.windowMs ?? '',
+          '"' + String(raw1).replace(/"/g, '""') + '"',
+          '"' + String(raw2).replace(/"/g, '""') + '"',
+        ];
+        csv += row.join(',') + '\n';
+      }
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const d = new Date();
+      const pad = (n: number, w = 2) => String(n).padStart(w, '0');
+      const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+      a.download = `spike_events_${patientName || 'NA'}_${sensorName || 'NA'}_${iso}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Failed to download spike log CSV', e);
+      window.alert('Failed to download spike log. See console for details.');
+    }
+  };
+
+  const handleClearSpikeLog = () => {
+    const ok = window.confirm('Clear the in-memory spike event log?');
+    if (!ok) return;
+    try {
+      clearSpikeEvents();
+      window.alert('Spike event log cleared.');
+    } catch (e) {
+      console.error('Failed to clear spike log', e);
+      window.alert('Failed to clear spike log. See console for details.');
+    }
   };
 
   // Save validation state (computed each render)
@@ -695,6 +824,12 @@ const SensorPanel: React.FC = () => {
             >
               Save Recording
             </button>
+            <div style={{ height: 8 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <button className={styles.button} onClick={handleDownloadSpikeLogJSON} disabled={isRecording}>Download Spike Log (JSON)</button>
+              <button className={styles.button} onClick={handleDownloadSpikeLogCSV} disabled={isRecording}>Download Spike Log (CSV)</button>
+              <button className={styles.button} onClick={handleClearSpikeLog} disabled={isRecording}>Clear Spike Log</button>
+            </div>
           </div>
           </>
         )}

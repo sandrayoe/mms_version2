@@ -17,6 +17,9 @@ interface BluetoothContextType {
   startIMU: () => Promise<void>;
   stopIMU: () => Promise<void>;
   clearIMU: () => void;
+  // Retrieve and clear in-memory spike/burst event log
+  getSpikeEvents: () => any[];
+  clearSpikeEvents: () => void;
 }
 
 export const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -35,6 +38,25 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     imuDataRef.current = imuData;
   }, [imuData]);
+
+  // Track last notification timestamp so we can distribute per-notification samples
+  // across the measured notification interval (reduces compressed "comb" spikes).
+  const lastNotificationTsRef = useRef<number | null>(null);
+  // Small debug logger: limit to first N notifications so we don't flood the console
+  const debugLogRef = useRef<number>(0);
+  // Conditional spike/burst analysis configuration
+  const SPIKE_MAG_THRESHOLD = 1000; // magnitude above which we consider the packet a spike (raised to reduce console noise)
+  const BURST_SAMPLE_COUNT_THRESHOLD = 12; // many samples in a single notification
+  const SMALL_INTERVAL_THRESHOLD = 6; // ms per-sample considered very small (indicates compression)
+  const RECENT_WINDOW_MS = 1000; // window to consider recent notifications
+  const RECENT_COUNT_THRESHOLD = 6; // number of notifications in window to flag a burst
+  const recentNotificationsRef = useRef<number[]>([]);
+  // Recent raw-payload hash map to debounce duplicate windows for display.
+  const DUP_WINDOW_MS = 250; // if identical raw payload seen within this window, skip display append
+  const recentRawHashRef = useRef<Map<string, number>>(new Map());
+  // In-memory bounded event log for spikes/bursts so UI can request and persist them
+  const spikeEventsRef = useRef<any[]>([]);
+  const MAX_SPIKE_EVENTS = 1000;
 
   // Nordic UART Service UUIDs
   const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -74,6 +96,15 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setDevice(selectedDevice);
       deviceRef.current = selectedDevice;
       setIsConnected(true);
+
+      // Keep lightweight connection logs for diagnostics
+      try {
+        console.log(`Bluetooth connected: ${selectedDevice.name ?? selectedDevice.id}`);
+        if (rxChar) console.log('RX characteristic available');
+        if (txChar) console.log('TX characteristic available');
+      } catch (e) {
+        // ignore logging errors in restricted environments
+      }
 
       selectedDevice.addEventListener("gattserverdisconnected", handleDisconnection);
     } catch (err) {
@@ -123,22 +154,28 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       const s1: number[] = new Array(pairCount);
       const s2: number[] = new Array(pairCount);
+      const raw1s: number[] = new Array(pairCount);
+      const raw2s: number[] = new Array(pairCount);
 
       for (let i = 0; i < pairCount; i++) {
         const off = i * 4;
         const raw1 = dv.getUint16(off, true);
         const raw2 = dv.getUint16(off + 2, true);
+        raw1s[i] = raw1;
+        raw2s[i] = raw2;
         s1[i] = Math.abs(raw1 - SensorDataProcessor.IDLE_VALUE);
         s2[i] = Math.abs(raw2 - SensorDataProcessor.IDLE_VALUE);
       }
 
-      return { sensor1: s1, sensor2: s2 };
+      return { sensor1: s1, sensor2: s2, raw1s, raw2s };
     }
   }
 
   const handleIMUData = (rawBytes: Uint8Array) => {
     try {
-      const { sensor1, sensor2 } = SensorDataProcessor.processRawBytesAsMagnitudes(rawBytes);
+  const parsed = SensorDataProcessor.processRawBytesAsMagnitudes(rawBytes);
+  // parsed contains sensor1/sensor2 magnitudes and raw1s/raw2s arrays
+  const { sensor1, sensor2, raw1s, raw2s } = parsed as any;
 
       // Build a per-pair inspection array for debugging.
       const pairs: Array<{ idx: number; d1: number | null; d2: number | null }> = [];
@@ -156,26 +193,217 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       //   .join(" ");
       // Debug logging removed for release; keep errors only.
 
-      // Timestamp the notification and assign per-sample timestamps with a small offset
-      // to preserve ordering within the notification. The offset is an estimate and can be
-      // refined later or replaced by device-provided timestamps.
+      // Timestamp the notification and assign per-sample timestamps.
+      // We try to distribute samples across the measured interval between
+      // notifications when possible to avoid compressing many samples into a
+      // very narrow time window (which causes the vertical "comb" visual).
       const baseTs = performance.now();
-      const estimatedSampleInterval = 7; // ms per sample (heuristic)
+      const DEFAULT_SAMPLE_INTERVAL = 20; // ms (conservative default, e.g. 50Hz)
+      const MIN_SAMPLE_INTERVAL = 5; // ms minimum spacing to avoid 0 or near-0 gaps
 
-      const sensor1Samples: BluetoothSample[] = sensor1.map((v, idx) => ({
-        value: v,
-        ts: baseTs - (sensor1.length - 1 - idx) * estimatedSampleInterval,
-      }));
+  // Determine the number of samples we need to distribute. Use the max of the two
+      // sensor arrays so we don't divide by zero.
+      const sampleCount = Math.max(sensor1.length, sensor2.length, 1);
 
-      const sensor2Samples: BluetoothSample[] = sensor2.map((v, idx) => ({
-        value: v,
-        ts: baseTs - (sensor2.length - 1 - idx) * estimatedSampleInterval,
-      }));
+      // Compute measured gap since last notification and derive a per-sample interval.
+      let perSampleInterval = DEFAULT_SAMPLE_INTERVAL;
+      if (lastNotificationTsRef.current !== null) {
+        const gap = baseTs - (lastNotificationTsRef.current as number);
+        // Distribute the gap across the samples; clamp to reasonable values.
+        const measured = gap / sampleCount;
+        if (measured >= MIN_SAMPLE_INTERVAL && measured < 10000) {
+          perSampleInterval = measured;
+        }
+      }
+      // Update last notification timestamp for next time
+      lastNotificationTsRef.current = baseTs;
 
-      setImuData(prev => ({
-        imu1_changes: [...prev.imu1_changes, ...sensor1Samples],
-        imu2_changes: [...prev.imu2_changes, ...sensor2Samples],
-      }));
+      // Build per-sensor samples with timestamps. We'll then align samples by
+      // timestamp and only record/display pairs where both sensors have the same
+      // timestamp. This prevents mismatched plotting when arrays have different
+      // lengths and keeps the two channels synchronized in the UI.
+      const makeSamples = (arr: number[]) =>
+        arr.map((v: number, idx: number) => ({
+          value: v,
+          ts: baseTs - (arr.length - 1 - idx) * perSampleInterval,
+        } as BluetoothSample));
+
+      const sensor1Samples = makeSamples(sensor1);
+      const sensor2Samples = makeSamples(sensor2);
+
+      // Align by timestamps: build maps and take the intersection of timestamps.
+      const map1 = new Map<number, number>();
+      const map2 = new Map<number, number>();
+      sensor1Samples.forEach(s => map1.set(Math.round(s.ts), s.value));
+      sensor2Samples.forEach(s => map2.set(Math.round(s.ts), s.value));
+
+      // Use rounded timestamps (ms) for intersection to avoid tiny floating
+      // differences. Only keep samples that exist in both maps.
+      const intersectionTs: number[] = [];
+      for (const ts of map1.keys()) {
+        if (map2.has(ts)) intersectionTs.push(ts);
+      }
+      intersectionTs.sort((a, b) => a - b);
+
+      // Build aligned sample pairs
+      const aligned1: BluetoothSample[] = [];
+      const aligned2: BluetoothSample[] = [];
+      for (const rts of intersectionTs) {
+        aligned1.push({ ts: rts, value: map1.get(rts) as number });
+        aligned2.push({ ts: rts, value: map2.get(rts) as number });
+      }
+
+      // We'll append only aligned samples so both channels remain index-aligned
+      // for display. This also reduces artifacts when one channel has extra
+      // trailing/leading samples.
+
+      // Compute a lightweight hash of the raw payload so we can debounce
+      // identical windows for display (some devices resend the same buffer).
+      let isDuplicateWindow = false;
+      try {
+        const rawHash = (raw1s || []).join(',') + '|' + (raw2s || []).join(',');
+        const lastSeen = recentRawHashRef.current.get(rawHash);
+        if (lastSeen && (baseTs - lastSeen) < DUP_WINDOW_MS) {
+          isDuplicateWindow = true;
+        } else {
+          recentRawHashRef.current.set(rawHash, baseTs);
+        }
+        // Purge old map entries to avoid unbounded growth
+        for (const [h, t] of Array.from(recentRawHashRef.current.entries())) {
+          if (baseTs - t > DUP_WINDOW_MS * 8) recentRawHashRef.current.delete(h);
+        }
+      } catch (e) {
+        // ignore hashing errors
+      }
+
+      // Temporary debug logging: print raw bytes, parsed raw values, magnitudes and timestamps
+      // for the first few notifications to help diagnose spikes. Limited to avoid flooding logs.
+      try {
+        if (debugLogRef.current < 6) {
+          // debug logging removed for release builds; keep a small counter to preserve
+          // the original intent (limit how many times this branch could run).
+          debugLogRef.current += 1;
+        }
+      } catch (e) {
+        // ignore logging errors
+      }
+
+      // Conditional spike/burst analysis
+      try {
+        const maxMag1 = sensor1.length ? Math.max(...sensor1) : 0;
+        const maxMag2 = sensor2.length ? Math.max(...sensor2) : 0;
+        const maxMag = Math.max(maxMag1, maxMag2);
+
+        // Track recent notifications for burst analysis
+        const now = baseTs;
+        const recent = recentNotificationsRef.current;
+        recent.push(now);
+        // keep only items within RECENT_WINDOW_MS
+        recentNotificationsRef.current = recent.filter((t) => now - t <= RECENT_WINDOW_MS);
+
+        // Condition: large magnitude spike in this notification
+        if (maxMag >= SPIKE_MAG_THRESHOLD) {
+          // Record spike event to in-memory log (bounded)
+          try {
+            spikeEventsRef.current.push({
+              id: `${baseTs}-${Math.random().toString(36).slice(2,8)}`,
+              type: 'spike',
+              time: baseTs,
+              len: rawBytes.length,
+              maxMag,
+              sampleCount,
+              perSampleInterval,
+              raw1s: (raw1s || []).slice(0, 16),
+              raw2s: (raw2s || []).slice(0, 16),
+              deduped: isDuplicateWindow || false,
+            });
+            if (spikeEventsRef.current.length > MAX_SPIKE_EVENTS) {
+              spikeEventsRef.current = spikeEventsRef.current.slice(-MAX_SPIKE_EVENTS);
+            }
+          } catch (e) {
+            // ignore logging storage errors
+          }
+          // Lightweight console log so occurrences are visible during runs
+          try {
+            console.log('IMU_EVENT spike:', { time: baseTs.toFixed(3), maxMag, sampleCount, deduped: isDuplicateWindow });
+          } catch (e) {}
+        }
+
+        // Condition: large sampleCount or very small per-sample interval
+        if (sampleCount >= BURST_SAMPLE_COUNT_THRESHOLD || perSampleInterval <= SMALL_INTERVAL_THRESHOLD) {
+          try {
+            spikeEventsRef.current.push({
+              id: `${baseTs}-${Math.random().toString(36).slice(2,8)}`,
+              type: 'burst',
+              time: baseTs,
+              sampleCount,
+              perSampleInterval,
+              recentCount: recentNotificationsRef.current.length,
+            });
+            if (spikeEventsRef.current.length > MAX_SPIKE_EVENTS) spikeEventsRef.current = spikeEventsRef.current.slice(-MAX_SPIKE_EVENTS);
+          } catch (e) {}
+          try {
+            console.log('IMU_EVENT burst:', { time: baseTs.toFixed(3), sampleCount, perSampleInterval });
+          } catch (e) {}
+        }
+
+        // Condition: many notifications recently -> log a burst event
+        if (recentNotificationsRef.current.length >= RECENT_COUNT_THRESHOLD) {
+          try {
+            spikeEventsRef.current.push({
+              id: `${baseTs}-${Math.random().toString(36).slice(2,8)}`,
+              type: 'rapid_notifications',
+              time: baseTs,
+              recentCount: recentNotificationsRef.current.length,
+              windowMs: RECENT_WINDOW_MS,
+            });
+            if (spikeEventsRef.current.length > MAX_SPIKE_EVENTS) spikeEventsRef.current = spikeEventsRef.current.slice(-MAX_SPIKE_EVENTS);
+          } catch (e) {}
+          try {
+            console.log('IMU_EVENT rapid_notifications:', { time: baseTs.toFixed(3), recentCount: recentNotificationsRef.current.length });
+          } catch (e) {}
+        }
+      } catch (e) {
+        // ignore analysis errors
+      }
+
+      setImuData(prev => {
+        // If this notification is a duplicate window (recent identical raw
+        // payload), skip appending to the display buffers to avoid repeated
+        // spikes showing up visually. We still record the full event in
+        // spikeEventsRef above for forensic analysis.
+        if (isDuplicateWindow) {
+          try { console.log('IMU_EVENT deduped_display', { time: baseTs.toFixed(3) }); } catch (e) {}
+          return prev;
+        }
+        const out1 = prev.imu1_changes.slice();
+        const out2 = prev.imu2_changes.slice();
+
+        // Append aligned samples, but avoid re-adding identical samples that
+        // already exist at the tail (simple dedupe). This checks the last
+        // appended sample and skips if timestamp and values match.
+        const last1 = out1.length ? out1[out1.length - 1] : null;
+        const last2 = out2.length ? out2[out2.length - 1] : null;
+
+        for (let i = 0; i < aligned1.length; i++) {
+          const s1 = aligned1[i];
+          const s2 = aligned2[i];
+          // if the last samples are identical (ts and value) skip to avoid
+          // duplicate repeated notification windows
+          if (
+            last1 && last2 &&
+            last1.ts === s1.ts && last2.ts === s2.ts &&
+            last1.value === s1.value && last2.value === s2.value
+          ) {
+            // already have this exact sample pair at the tail; skip
+            continue;
+          }
+          out1.push(s1);
+          out2.push(s2);
+        }
+
+        return { imu1_changes: out1, imu2_changes: out2 };
+      });
     } catch (err) {
       console.error("Error parsing IMU data:", err);
     }
@@ -234,6 +462,15 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // Expose spike event helpers
+  const getSpikeEvents = () => {
+    return spikeEventsRef.current.slice();
+  };
+
+  const clearSpikeEvents = () => {
+    spikeEventsRef.current = [];
+  };
+
   return (
     <BluetoothContext.Provider value={{
       connect,
@@ -243,7 +480,9 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       imuData,
       startIMU,
       stopIMU,
-      clearIMU
+      clearIMU,
+      getSpikeEvents,
+      clearSpikeEvents,
     }}>
       {children}
     </BluetoothContext.Provider>
