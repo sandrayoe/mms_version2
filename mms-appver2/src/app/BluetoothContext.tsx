@@ -54,6 +54,56 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // NOTE: spike/burst forensic log removed per user request. Keep dedupe and
   // display behavior; providers no longer record a separate in-memory spike log.
 
+  // Logging control: set to true for verbose debugging; set to false to keep
+  // console output minimal in production/testing.
+  const VERBOSE_LOGGING = false;
+  const log = (...args: any[]) => {
+    if (!VERBOSE_LOGGING) return;
+    try { console.log(...args); } catch (e) { /* ignore logging errors */ }
+  };
+
+  // Incoming raw notification queue to avoid doing heavy parsing directly in
+  // the Bluetooth message handler. We drain this queue at a controlled rate
+  // using a timer to avoid long 'message' or 'requestAnimationFrame' handlers
+  // that cause devtools "[Violation]" messages.
+  // Queue items now include arrival timestamp so we can preserve the
+  // original notification time even if processing is deferred.
+  const rawQueueRef = useRef<Array<{ bytes: Uint8Array; arrivalTs: number }>>([]);
+  const rawQueueProcessingRef = useRef(false);
+  const PROCESS_MS = 12; // ms between processing ticks (small latency)
+  // Process a few notifications per tick so the queue doesn't backlog but
+  // we also avoid long single-tick processing in the message handler.
+  const BATCH_PER_TICK = 4; // number of notifications processed per tick
+
+  // Pending aligned sample pairs buffer for throttled UI updates.
+  const pairsRef = useRef<Array<{ s1: BluetoothSample; s2: BluetoothSample }>>([]);
+  // Lower pending cap to bound memory and encourage timely draining.
+  const PENDING_CAP = 2000; // maximum pending pairs to keep
+  const DRAIN_MS = 33; // drain UI updates ~30Hz
+  // Total items to consider draining per interval (we'll actually process
+  // that total in small chunks to yield between microtasks and avoid any
+  // long-running single JS task which causes devtools "[Violation]" logs).
+  const MAX_DRAIN_PER_TICK = 256; // cap total items considered per drain
+  const DRAIN_CHUNK_SIZE = 64; // chunk size processed per micro-yield
+  const drainingRef = useRef(false);
+
+  const processRawQueue = () => {
+    rawQueueProcessingRef.current = false;
+    try {
+      const batch = rawQueueRef.current.splice(0, BATCH_PER_TICK);
+      for (const item of batch) {
+        try { handleIMUData(item); } catch (e) { /* swallow per-item errors */ }
+      }
+      if (rawQueueRef.current.length > 0) {
+        // schedule next tick
+        rawQueueProcessingRef.current = true;
+        setTimeout(processRawQueue, PROCESS_MS);
+      }
+    } catch (e) {
+      rawQueueProcessingRef.current = false;
+    }
+  };
+
   // Nordic UART Service UUIDs
   const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
   const RX_CHARACTERISTIC_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
@@ -93,14 +143,10 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       deviceRef.current = selectedDevice;
       setIsConnected(true);
 
-      // Keep lightweight connection logs for diagnostics
-      try {
-        console.log(`Bluetooth connected: ${selectedDevice.name ?? selectedDevice.id}`);
-        if (rxChar) console.log('RX characteristic available');
-        if (txChar) console.log('TX characteristic available');
-      } catch (e) {
-        // ignore logging errors in restricted environments
-      }
+      // Keep lightweight connection logs for diagnostics (gate behind verbose)
+      log(`Bluetooth connected: ${selectedDevice.name ?? selectedDevice.id}`);
+      if (rxChar) log('RX characteristic available');
+      if (txChar) log('TX characteristic available');
 
       selectedDevice.addEventListener("gattserverdisconnected", handleDisconnection);
     } catch (err) {
@@ -167,11 +213,15 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }
 
-  const handleIMUData = (rawBytes: Uint8Array) => {
+  // Now accepts the queued item which includes arrival timestamp so
+  // timestamps assigned to samples reflect when the notification arrived
+  // rather than when it was processed.
+  const handleIMUData = (item: { bytes: Uint8Array; arrivalTs: number }) => {
     try {
-  const parsed = SensorDataProcessor.processRawBytesAsMagnitudes(rawBytes);
-  // parsed contains sensor1/sensor2 magnitudes and raw1s/raw2s arrays
-  const { sensor1, sensor2, raw1s, raw2s } = parsed as any;
+      const rawBytes = item.bytes;
+      const parsed = SensorDataProcessor.processRawBytesAsMagnitudes(rawBytes);
+      // parsed contains sensor1/sensor2 magnitudes and raw1s/raw2s arrays
+      const { sensor1, sensor2, raw1s, raw2s } = parsed as any;
 
       // Build a per-pair inspection array for debugging.
       const pairs: Array<{ idx: number; d1: number | null; d2: number | null }> = [];
@@ -193,7 +243,9 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // We try to distribute samples across the measured interval between
       // notifications when possible to avoid compressing many samples into a
       // very narrow time window (which causes the vertical "comb" visual).
-      const baseTs = performance.now();
+  // Use the recorded arrival timestamp (when the message was received)
+  // so per-sample timestamps track real time even if processing is delayed.
+  const baseTs = (item && typeof item.arrivalTs === 'number') ? item.arrivalTs : performance.now();
       const DEFAULT_SAMPLE_INTERVAL = 20; // ms (conservative default, e.g. 50Hz)
       const MIN_SAMPLE_INTERVAL = 5; // ms minimum spacing to avoid 0 or near-0 gaps
 
@@ -315,43 +367,21 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // ignore analysis errors
       }
 
-      setImuData(prev => {
-  // If this notification is a duplicate window (recent identical raw
-  // payload), skip appending to the display buffers to avoid repeated
-  // spikes showing up visually. Note: we no longer record a separate
-  // in-memory spike/burst forensic log; display suppression remains.
-        if (isDuplicateWindow) {
-          // duplicate display window; suppression notice removed per user request
-          return prev;
-        }
-        const out1 = prev.imu1_changes.slice();
-        const out2 = prev.imu2_changes.slice();
+      // If this notification is a duplicate window (recent identical raw
+      // payload), skip appending to pending buffer to avoid repeated
+      // spikes showing up visually.
+  if (isDuplicateWindow) return;
 
-        // Append aligned samples, but avoid re-adding identical samples that
-        // already exist at the tail (simple dedupe). This checks the last
-        // appended sample and skips if timestamp and values match.
-        const last1 = out1.length ? out1[out1.length - 1] : null;
-        const last2 = out2.length ? out2[out2.length - 1] : null;
-
-        for (let i = 0; i < aligned1.length; i++) {
-          const s1 = aligned1[i];
-          const s2 = aligned2[i];
-          // if the last samples are identical (ts and value) skip to avoid
-          // duplicate repeated notification windows
-          if (
-            last1 && last2 &&
-            last1.ts === s1.ts && last2.ts === s2.ts &&
-            last1.value === s1.value && last2.value === s2.value
-          ) {
-            // already have this exact sample pair at the tail; skip
-            continue;
-          }
-          out1.push(s1);
-          out2.push(s2);
-        }
-
-        return { imu1_changes: out1, imu2_changes: out2 };
-      });
+      // Push aligned sample pairs into the pending buffer. The buffer is
+      // drained at a fixed interval (DRAIN_MS) to batch updates and avoid
+      // frequent React renders that cause requestAnimationFrame violations.
+      for (let i = 0; i < aligned1.length; i++) {
+        pairsRef.current.push({ s1: aligned1[i], s2: aligned2[i] });
+      }
+      // Trim if pending buffer grows too large
+      if (pairsRef.current.length > PENDING_CAP) {
+        pairsRef.current.splice(0, pairsRef.current.length - PENDING_CAP);
+      }
     } catch (err) {
       console.error("Error parsing IMU data:", err);
     }
@@ -360,8 +390,21 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const handleIncomingData = (event: any) => {
     const target = event.target as BluetoothRemoteGATTCharacteristic;
     if (!target || !target.value) return;
-  const rawBytes = new Uint8Array(target.value.buffer);
-    handleIMUData(rawBytes);
+    const rawBytes = new Uint8Array(target.value.buffer);
+    // Push into the lightweight queue and schedule processing at a controlled
+    // rate to avoid long synchronous work in the message handler.
+    try {
+      rawQueueRef.current.push({ bytes: rawBytes, arrivalTs: performance.now() });
+    } catch (e) {
+      // if push fails for some reason, try processing directly as a fallback
+      try { handleIMUData({ bytes: rawBytes, arrivalTs: performance.now() }); } catch (ee) {}
+      return;
+    }
+
+    if (!rawQueueProcessingRef.current) {
+      rawQueueProcessingRef.current = true;
+      setTimeout(processRawQueue, PROCESS_MS);
+    }
   };
 
   const startIMU = async () => {
@@ -409,6 +452,87 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.error("Failed to send command:", err);
     }
   };
+
+  // Drain pending pairs into React state at a controlled rate to throttle
+  // UI updates and reduce rAF/reconciliation pressure.
+  useEffect(() => {
+    let mounted = true;
+
+    const appendChunkToState = (chunk: Array<{ s1: BluetoothSample; s2: BluetoothSample }>) => {
+      if (!chunk || chunk.length === 0) return;
+      setImuData(prev => {
+        const out1 = prev.imu1_changes.slice();
+        const out2 = prev.imu2_changes.slice();
+
+        let last1 = out1.length ? out1[out1.length - 1] : null;
+        let last2 = out2.length ? out2[out2.length - 1] : null;
+
+        for (const p of chunk) {
+          const s1 = p.s1;
+          const s2 = p.s2;
+          if (
+            last1 && last2 &&
+            last1.ts === s1.ts && last2.ts === s2.ts &&
+            last1.value === s1.value && last2.value === s2.value
+          ) {
+            continue;
+          }
+          out1.push(s1);
+          out2.push(s2);
+          last1 = s1;
+          last2 = s2;
+        }
+
+        return { imu1_changes: out1, imu2_changes: out2 };
+      });
+    };
+
+    const chunkedDrain = () => {
+      if (!mounted) return;
+      if (drainingRef.current) return; // avoid overlapping drains
+      if (pairsRef.current.length === 0) return;
+
+      drainingRef.current = true;
+      // Determine total to process this tick (bounded)
+      const total = Math.min(pairsRef.current.length, MAX_DRAIN_PER_TICK);
+      let processed = 0;
+
+      const processNextChunk = () => {
+        if (!mounted) {
+          drainingRef.current = false;
+          return;
+        }
+
+        if (processed >= total) {
+          drainingRef.current = false;
+          return;
+        }
+
+        const toTake = Math.min(DRAIN_CHUNK_SIZE, total - processed);
+        const chunk = pairsRef.current.splice(0, toTake);
+        processed += chunk.length;
+
+        try {
+          appendChunkToState(chunk);
+        } catch (e) {
+          // swallow chunk errors but keep draining
+        }
+
+        // If more chunks remain to reach 'total', yield to the event loop
+        if (processed < total) {
+          setTimeout(processNextChunk, 0);
+        } else {
+          drainingRef.current = false;
+        }
+      };
+
+      // Start the chunked processing
+      setTimeout(processNextChunk, 0);
+    };
+
+    const id = setInterval(chunkedDrain, DRAIN_MS);
+    return () => { mounted = false; clearInterval(id); };
+  }, []);
 
   // (Spike/burst forensic log removed; no exported helpers.)
 
