@@ -299,26 +299,17 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
         // Condition: large magnitude spike in this notification
         if (maxMag >= SPIKE_MAG_THRESHOLD) {
-          // Spike detected. We no longer record a separate in-memory spike log;
-          // keep a lightweight console notification only.
-          try {
-            console.log('IMU_EVENT spike:', { time: baseTs.toFixed(3), maxMag, sampleCount, deduped: isDuplicateWindow });
-          } catch (e) {}
+          // Spike detected. Console diagnostics suppressed per user request.
         }
 
         // Condition: large sampleCount or very small per-sample interval
         if (sampleCount >= BURST_SAMPLE_COUNT_THRESHOLD || perSampleInterval <= SMALL_INTERVAL_THRESHOLD) {
-          // Burst detected; do not record to an in-memory log, but keep console notice
-          try {
-            console.log('IMU_EVENT burst:', { time: baseTs.toFixed(3), sampleCount, perSampleInterval });
-          } catch (e) {}
+          // Burst detected. Console diagnostics suppressed per user request.
         }
 
         // Condition: many notifications recently -> log a burst event
         if (recentNotificationsRef.current.length >= RECENT_COUNT_THRESHOLD) {
-          try {
-            console.log('IMU_EVENT rapid_notifications:', { time: baseTs.toFixed(3), recentCount: recentNotificationsRef.current.length });
-          } catch (e) {}
+          // rapid_notifications detected. Console diagnostics suppressed per user request.
         }
       } catch (e) {
         // ignore analysis errors
@@ -330,7 +321,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // spikes showing up visually. Note: we no longer record a separate
   // in-memory spike/burst forensic log; display suppression remains.
         if (isDuplicateWindow) {
-          try { console.log('IMU_EVENT deduped_display', { time: baseTs.toFixed(3) }); } catch (e) {}
+          // duplicate display window; suppression notice removed per user request
           return prev;
         }
         const out1 = prev.imu1_changes.slice();
