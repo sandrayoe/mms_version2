@@ -60,21 +60,37 @@ const DocsPage: React.FC = () => {
 
       <section style={{ marginTop: 20 }}>
         <h2><b>3. Timestamps and sample timing</b></h2>
+        <p> Each incoming BLE notification is added to a queue immediately, tagged with <code>arrivalTs = performance.now()</code> to record its exact arrival time. Parsing is deferred to keep the message handler lightweight. When the queued item is later processed, its stored <code>arrivalTs</code> is used as the notification’s <code>baseTs</code> when assigning timestamps to individual samples. This ensures that real arrival timing is preserved even if processing is delayed by the queue. </p> 
+        <p> Per-sample spacing is calculated from the measured time gap between consecutive notifications when available. If that information is missing, a default interval of <code>DEFAULT_SAMPLE_INTERVAL = 20&nbsp;ms</code> is used. All timestamps are rounded to integer milliseconds. The provider exposes <code>imuData.imu1_changes</code> and <code>imuData.imu2_changes</code> arrays, 
+        where each element has the form <code>{'{'} value: number; ts: number {'}'}</code>, with <code>ts</code> measured in milliseconds from <code>performance.now()</code> at page load. To display human-readable wall-clock times in the UI, convert these timestamps to epoch time using <code>Date.now() - performance.now() </code> </p>
         <p>
-          Each parsed sample is assigned a timestamp based on <code>performance.now()</code>
-          at the time the notification is handled. A small per-sample offset
-          is applied so the relative ordering within a single notification is preserved.
-          The provider exposes <code>imuData.imu1_changes</code> and <code>imuData.imu2_changes</code>
-          arrays, where each item is <code>{'{'} value: number; ts: number {'}'}</code>.
+          Windowing & assumed timing: the UI assumes roughly <code>sampleIntervalMs = 20</code>
+          (≈50 Hz) when computing expected ranges. Charts keep a sliding window of the most
+          recent <code>CHART_WINDOW_SIZE</code> samples (default 200). Adjust these values in
+          <code>src/app/NMESControl.tsx</code> to change visible time span or timebase.
         </p>
+      </section>
+
+      <section style={{ marginTop: 20 }}>
+        <h2><b>Deduplication & suppression</b></h2>
         <p>
-          Windowing & assumed timing: the UI assumes an approximate sample interval (the code
-          uses <code>sampleIntervalMs = 20</code> as a heuristic, i.e. ~50 Hz). The chart
-          component displays a sliding window of the most recent <code>CHART_WINDOW_SIZE </code>
-          samples (default <strong>200 samples</strong>), so the visible time span is roughly
-          200 * 20 ms ≈ 4 seconds at the default assumptions. These numbers are configurable in
-          <code> src/app/NMESControl.tsx</code> if you need a wider/narrower window or a different timebase.
+          The provider performs two lightweight dedupe steps to avoid repeated identical
+          spikes showing up in the charts:
         </p>
+        <ol>
+          <li>
+            <strong>Raw-window debounce</strong>: a string hash of the raw 16-bit values
+            (<code>raw1s.join(',') + '|' + raw2s.join(',')</code>) is compared against a
+            recent map. If the same payload hash was seen within <code>DUP_WINDOW_MS</code>
+            (default 250 ms) the whole notification is skipped from being appended.
+          </li>
+          <li>
+            <strong>Tail-pair dedupe</strong>: when aligned sample pairs are drained into the
+            React state the code checks the last appended pair and skips any new pair whose
+            timestamps and values exactly match the previous pair. This prevents duplicate
+            adjacent points after batching/draining.
+          </li>
+        </ol>
       </section>
 
       <section style={{ marginTop: 20 }}>
@@ -84,12 +100,12 @@ const DocsPage: React.FC = () => {
         </p>
         <ul>
           <li>a. Polling: The UI polls the provider arrays at a fixed interval (the implementation batches work via <code>setInterval(..., 100)</code>, i.e. roughly every 100 ms) and slices newly appended samples to avoid reprocessing old ones. Batches are then flushed incrementally to the React state using requestAnimationFrame to keep rendering smooth.</li>
-          <li>b. Binning & averaging: If <code>BIN_MS</code> is greater than 0 (default 20 ms), incoming samples are grouped in time bins of that width and averaged (both time and value are averaged). This reduces jitter and rendering churn. Set <code>BIN_MS = 0</code> to disable binning and keep raw samples.</li>
+          <li>b. Binning & averaging: If <code>BIN_MS</code> is greater than, incoming samples are grouped in time bins of that width and averaged (both time and value are averaged). This reduces jitter and rendering churn. Set default <code>BIN_MS = 0</code> to disable binning and keep raw samples.</li>
           <li>c. Incremental flush: parsed (or binned) samples are enqueued and flushed in small chunks per animation frame (the code uses <code>FLUSH_PER_FRAME</code>, default 8) to avoid long main-thread stalls when a large batch arrives.</li>
           <li>d. Visible window: charts keep only the most recent <code>CHART_WINDOW_SIZE</code> samples (default 200) to limit memory and rendering work; older samples are discarded from the in-memory chart buffers but remain available in recordings if you saved them.</li>
           <li>e. Rendering: averaged points are flushed to the charts incrementally via rAF to keep the UI responsive.</li>
           <li>f. Y-axis: charts use <code>CHART_Y_MAX = 250</code> for the main view and separate zoomed panels for 0–50. These are visual limits only — they do not modify stored values.</li>
-          <li>g. Formatting: X axis and tooltips are formatted; Y axis ticks and tooltips are also visually rounded (e.g., 1–2 decimals) by the component code.</li>
+          <li>g. Formatting: X axis and tooltips are formatted; Y axis ticks are shown as integers in the current release (no trailing <code>.0</code>) while tooltips still show two decimals by default. These are presentation-only and do not change stored CSV precision.</li>
         </ul>
       </section>
 
@@ -121,15 +137,31 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
             a. Parser location: change parsing or apply clamping/normalization in <code>src/app/BluetoothContext.tsx</code> (class <code>SensorDataProcessor</code>).
           </li>
           <li>
-            b. Binning: to change how samples are aggregated, edit <code>BIN_MS</code> in <code>src/app/NMESControl.tsx</code>. Set to <code>0</code> for raw recording.
+            b. Queueing & throttling knobs: the provider was updated to enqueue incoming
+            notifications and process them in small batches. See these symbols in
+            <code>BluetoothContext.tsx</code>:
+            <ul>
+              <li><code>rawQueueRef</code> — incoming queue of {'{'} bytes, arrivalTs {'}'}</li>
+              <li><code>PROCESS_MS</code>, <code>BATCH_PER_TICK</code> — raw-queue drain timing</li>
+              <li><code>pairsRef</code>, <code>PENDING_CAP</code> — pending aligned pairs buffer</li>
+              <li><code>DRAIN_MS</code>, <code>MAX_DRAIN_PER_TICK</code>, <code>DRAIN_CHUNK_SIZE</code> — chunked drain parameters to avoid long main-thread tasks</li>
+              <li><code>VERBOSE_LOGGING</code> — set to true only for debugging to reduce console noise</li>
+            </ul>
           </li>
           <li>
-            c. Visualization limits: modify <code>CHART_Y_MAX</code> to tune the main chart vertical scaling.
+            c. Binning: to change how samples are aggregated, edit <code>BIN_MS</code> in <code>src/app/NMESControl.tsx</code>. Set to <code>0</code> for raw recording.
           </li>
           <li>
-            d. Rounding & display: the charts now format Y ticks and tooltips visually — this does not change CSV precision. If you want to round values in recordings, apply rounding when building recorded samples (in the binning step).</li>
+            d. Visualization limits: modify <code>CHART_Y_MAX</code> to tune the main chart vertical scaling.
+          </li>
           <li>
-            e. If you need units or calibration (e.g., convert ADC magnitudes to physical units), add a calibration factor in the parser so stored values are in physical units rather than raw magnitudes.
+            e. Rounding & display: the charts format Y ticks to integers for readability; tooltips show two decimals by default. This is presentation-only — CSVs keep full precision unless you explicitly round during binning.
+          </li>
+          <li>
+            f. If you need units or calibration (e.g., convert ADC magnitudes to physical units), add a calibration factor in the parser so stored values are in physical units rather than raw magnitudes.
+          </li>
+          <li>
+            g. Spike forensic log: the in-memory spike/burst forensic log was removed from the provider in this release (per user request). Offline forensic analysis remains possible via the CSV exports and external tools.
           </li>
         </ul>
       </section>
@@ -138,7 +170,7 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
         <h2><b>7. Troubleshooting & diagnostic tips</b></h2>
         <ul>
           <li>a. If the chart looks flat or values are all zeros: verify the device is charged (sufficiently) and is sending notifications. Otherwise, check the connections.</li>
-          <li>b. To inspect raw per-notification samples, set <code>BIN_MS = 0</code> and enable logging in <code>BluetoothContext.handleIMUData</code>.</li>
+          <li>b. To inspect raw per-notification samples, set <code>BIN_MS = 0</code> and enable logging in <code>BluetoothContext.handleIMUData</code> (set <code>VERBOSE_LOGGING = true</code> temporarily). You can also add a small dev overlay to show <code>rawQueueRef.current.length</code> and <code>pairsRef.current.length</code> to observe backlog while reproducing bursts.</li>
           <li>c. CSV missing parameters: ensure you pressed <em>Input Parameters</em> (it records snapshots) before starting a recording, otherwise the latest UI values will be used as fallback.</li>
         </ul>
       </section>
@@ -153,7 +185,7 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
 
       <div style={{ height: 28 }} />
       <div style={{ fontSize: 13, color: '#666' }}>
-        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 30 Oct 2025.
+        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 6 Nov 2025.
       </div>
     </div>
   );
