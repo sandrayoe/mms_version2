@@ -566,20 +566,6 @@ const SensorPanel: React.FC = () => {
       }
     }
 
-    // Append aggregated (chart) rows so the CSV can reproduce what was displayed
-    const agg1 = recordedAggRef.current.sensor1 ?? [];
-    const agg2 = recordedAggRef.current.sensor2 ?? [];
-    if ((agg1 && agg1.length) || (agg2 && agg2.length)) {
-      csv += '\naggregated_sensor1,time,avg,count,min,max,spike\n';
-      for (const a of agg1) {
-        csv += `${a.time},${a.sensorValue},${a.count},${a.min},${a.max},${a.spike ? '1' : '0'}\n`;
-      }
-      csv += '\naggregated_sensor2,time,avg,count,min,max,spike\n';
-      for (const a of agg2) {
-        csv += `${a.time},${a.sensorValue},${a.count},${a.min},${a.max},${a.spike ? '1' : '0'}\n`;
-      }
-    }
-
     // Helper to sanitize parts for filenames
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
 
