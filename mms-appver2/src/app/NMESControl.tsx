@@ -105,7 +105,15 @@ const SensorPanel: React.FC = () => {
   const handleApplyModify = async () => {
     // Send commands to device
     try {
-      if (frequency) await sendCommand('f' + frequency);
+      // Frequency command: 'f' + 2 ASCII digits (e.g., 'f25' for 25 Hz)
+      if (frequency) {
+        const freqNum = parseInt(frequency);
+        if (isNaN(freqNum) || freqNum < 15 || freqNum > 50) {
+          window.alert('Frequency must be between 15 and 50 Hz');
+          return;
+        }
+        await sendCommand('f' + String(freqNum).padStart(2, '0'));
+      }
       if (rampUp) await sendCommand('r' + rampUp);
       if (rampDown) await sendCommand('R' + rampDown);
       await sendCommand('s');
