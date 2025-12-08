@@ -523,7 +523,15 @@ const SensorPanel: React.FC = () => {
       // Use sessionStartRef to calculate the actual timestamp for each data point
       const actualTimestamp = (sessionStartRef.current ?? Date.now()) + (t * 1000);
       const utcPlus1Time = new Date(actualTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
-      const absoluteTimestamp = utcPlus1Time.toISOString().replace('Z', '+01:00');
+      // Manually format to ensure +01:00 timezone is shown correctly
+      const year = utcPlus1Time.getUTCFullYear();
+      const month = String(utcPlus1Time.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(utcPlus1Time.getUTCDate()).padStart(2, '0');
+      const hours = String(utcPlus1Time.getUTCHours()).padStart(2, '0');
+      const minutes = String(utcPlus1Time.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(utcPlus1Time.getUTCSeconds()).padStart(2, '0');
+      const milliseconds = String(utcPlus1Time.getUTCMilliseconds()).padStart(3, '0');
+      const absoluteTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
   const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
@@ -537,7 +545,15 @@ const SensorPanel: React.FC = () => {
       for (const m of markers) {
         const markerTimestamp = (sessionStartRef.current ?? Date.now()) + (m.time * 1000);
         const markerUTCPlus1 = new Date(markerTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
-        const markerUTC = markerUTCPlus1.toISOString().replace('Z', '+01:00');
+        // Manually format to ensure +01:00 timezone is shown correctly
+        const year = markerUTCPlus1.getUTCFullYear();
+        const month = String(markerUTCPlus1.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(markerUTCPlus1.getUTCDate()).padStart(2, '0');
+        const hours = String(markerUTCPlus1.getUTCHours()).padStart(2, '0');
+        const minutes = String(markerUTCPlus1.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(markerUTCPlus1.getUTCSeconds()).padStart(2, '0');
+        const milliseconds = String(markerUTCPlus1.getUTCMilliseconds()).padStart(3, '0');
+        const markerUTC = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
         csv += `${m.type},${m.type},${markerUTC},${m.time}\n`;
       }
     }
@@ -553,7 +569,15 @@ const SensorPanel: React.FC = () => {
     const a = document.createElement('a');
     a.href = url;
     // Build user-friendly filename with ISO 8601 UTC+1 timestamp
-    const utcPlus1Timestamp = new Date(Date.now() + 60 * 60 * 1000).toISOString().replace(/[:.]/g, '-').replace('Z', '+01-00');
+    const fileDate = new Date(Date.now() + 60 * 60 * 1000);
+    const year = fileDate.getUTCFullYear();
+    const month = String(fileDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(fileDate.getUTCDate()).padStart(2, '0');
+    const hours = String(fileDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(fileDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(fileDate.getUTCSeconds()).padStart(2, '0');
+    const milliseconds = String(fileDate.getUTCMilliseconds()).padStart(3, '0');
+    const utcPlus1Timestamp = `${year}-${month}-${day}T${hours}-${minutes}-${seconds}-${milliseconds}+01-00`;
   a.download = `mms_${patientPart}_${sensorPart}_${utcPlus1Timestamp}.csv`;
     document.body.appendChild(a);
     a.click();
