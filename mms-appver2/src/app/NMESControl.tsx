@@ -398,7 +398,6 @@ const SensorPanel: React.FC = () => {
     // Ensure session-relative time restarts at 0 for new measurement
     sessionStartRef.current = null;
     sessionWallClockStartRef.current = null;
-    setIsMeasuring(true);nt = null;
     setIsMeasuring(true);
     startIMU();
     // clear markers when starting a fresh measurement
@@ -525,7 +524,6 @@ const SensorPanel: React.FC = () => {
       // Use sessionWallClockStartRef + relative time to calculate the actual timestamp for each data point
       const actualTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (t * 1000);
       const utcPlus1Time = new Date(actualTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
-      const utcPlus1Time = new Date(actualTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
       // Manually format to ensure +01:00 timezone is shown correctly
       const year = utcPlus1Time.getUTCFullYear();
       const month = String(utcPlus1Time.getUTCMonth() + 1).padStart(2, '0');
@@ -546,7 +544,6 @@ const SensorPanel: React.FC = () => {
     if (markers && markers.length) {
       for (const m of markers) {
         const markerTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (m.time * 1000);
-        const markerUTCPlus1 = new Date(markerTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
         const markerUTCPlus1 = new Date(markerTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
         // Manually format to ensure +01:00 timezone is shown correctly
         const year = markerUTCPlus1.getUTCFullYear();
