@@ -67,13 +67,7 @@ const SensorPanel: React.FC = () => {
 
   // User inputs for file naming and parameters
   const [frequency, setFrequency] = useState<string>("");
-  const [level, setLevel] = useState<string>("");
   const [intensity, setIntensity] = useState<string>("");
-  const [motorPoints, setMotorPoints] = useState<string>("");
-  const [position, setPosition] = useState<string>("");
-  const [pvv1, setPvv1] = useState<string>("");
-  const [pvv2, setPvv2] = useState<string>("");
-  const [pvv3, setPvv3] = useState<string>("");
   const [modifyMode, setModifyMode] = useState<boolean>(false);
   // New inputs for saving metadata
   const [patientName, setPatientName] = useState<string>("");
@@ -104,11 +98,7 @@ const SensorPanel: React.FC = () => {
     // Validate required fields before applying
     const requiredChecks: Array<{ key: string; label: string; value: string }> = [
       { key: 'frequency', label: 'Frequency', value: frequency },
-      { key: 'motorPoints', label: 'Motor points', value: motorPoints },
-      { key: 'position', label: 'Position', value: position },
-      { key: 'pvv1', label: 'PVV1', value: pvv1 },
-      { key: 'pvv2', label: 'PVV2', value: pvv2 },
-      { key: 'pvv3', label: 'PVV3', value: pvv3 },
+      { key: 'intensity', label: 'Intensity', value: intensity },
     ];
 
     const missing = requiredChecks.filter((r) => !r.value || r.value.trim() === '').map((r) => r.label);
@@ -123,13 +113,7 @@ const SensorPanel: React.FC = () => {
       const t = 0;
       pushParamSnapshot(t, {
         frequency: frequency || 'N/A',
-        level: level || 'N/A',
         intensity: intensity || 'N/A',
-        motorPoints: motorPoints || 'N/A',
-        position: position || 'N/A',
-        pvv1: pvv1 || 'N/A',
-        pvv2: pvv2 || 'N/A',
-        pvv3: pvv3 || 'N/A',
       });
       // mark submitted since user explicitly applied/submitted parameters
       setParamsSubmitted(true);
@@ -165,13 +149,7 @@ const SensorPanel: React.FC = () => {
     if (!ok) return;
     pushParamSnapshot(latestTime, {
       frequency: frequency || 'N/A',
-      level: level || 'N/A',
       intensity: intensity || 'N/A',
-      motorPoints: motorPoints || 'N/A',
-      position: position || 'N/A',
-      pvv1: pvv1 || 'N/A',
-      pvv2: pvv2 || 'N/A',
-      pvv3: pvv3 || 'N/A',
     });
     setParamsSubmitted(true);
     setLastAppliedTime(latestTime);
@@ -435,11 +413,7 @@ const SensorPanel: React.FC = () => {
     // show a popup to remind the user to fill them.
     const requiredChecks: Array<{ key: string; label: string; value: string }> = [
       { key: 'frequency', label: 'Frequency', value: frequency },
-      { key: 'motorPoints', label: 'Motor points', value: motorPoints },
-      { key: 'position', label: 'Position', value: position },
-      { key: 'pvv1', label: 'PVV1', value: pvv1 },
-      { key: 'pvv2', label: 'PVV2', value: pvv2 },
-      { key: 'pvv3', label: 'PVV3', value: pvv3 },
+      { key: 'intensity', label: 'Intensity', value: intensity },
     ];
     const missing = requiredChecks.filter((r) => !r.value || r.value.trim() === '').map((r) => r.label);
     if (missing.length) {
@@ -516,7 +490,7 @@ const SensorPanel: React.FC = () => {
     };
 
   // Define parameter column order
-  const paramCols = ['frequency','level','intensity','motorPoints','position','pvv1','pvv2','pvv3'];
+  const paramCols = ['frequency','intensity'];
   // Add patient/sensor metadata columns to header
   const metaCols = ['patientName','sensorName'];
 
@@ -534,13 +508,7 @@ const SensorPanel: React.FC = () => {
         // no snapshots recorded; use current UI values as best-effort
         paramsForRow = {
           frequency: frequency || 'N/A',
-          level: level || 'N/A',
-          intensity: intensity || 'N/A',
-          motorPoints: motorPoints || 'N/A',
-          position: position || 'N/A',
-          pvv1: pvv1 || 'N/A',
-          pvv2: pvv2 || 'N/A',
-          pvv3: pvv3 || 'N/A',
+          intensity: intensity || 'N/A'
         };
       } else {
         // if the current snapIdx's time is <= t, use it; otherwise use the earliest snap (fallback)
@@ -618,48 +586,21 @@ const SensorPanel: React.FC = () => {
           <div className={styles.controlBox}>
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
-              {/* Patient name removed - using parameter fields instead */}
-                {/* Row 1: Frequency (left) - Level (middle) */}
-                <label className={`${styles.inputLabel} ${styles.col1}`}>
-                  <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                <label className={`${styles.inputLabel} ${styles.col2} ${styles.levelInputWrap}`}>
-                  <span className={styles.labelRow}>Level:</span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={level} onChange={(e) => setLevel(e.target.value)} />
-                </label>
+              {/* Simplified parameter inputs - Row 1: Frequency and Intensity centered */}
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '8px' }}>
+                  <label className={styles.inputLabel}>
+                    <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
+                  </label>
 
-                {/* Row 2: Intensity (left middle) - Motor points (middle/right) */}
-                <label className={`${styles.inputLabel} ${styles.col1}`}>
-                  <span className={styles.labelRow}>Intensity (mA):</span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => setIntensity(e.target.value)} />
-                </label>
-                <label className={`${styles.inputLabel} ${styles.col2}`}>
-                  <span className={styles.labelRow}>Motor points:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={motorPoints} onChange={(e) => { setMotorPoints(e.target.value); setParamsSubmitted(false); }} />
-                </label>
+                  <label className={styles.inputLabel}>
+                    <span className={styles.labelRow}>Intensity (mA):<span className={styles.requiredAsterisk}>*</span></span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => { setIntensity(e.target.value); setParamsSubmitted(false); }} />
+                  </label>
+                </div>
 
-                {/* Row 3: Position (left) - PVV1 (middle) */}
-                <label className={`${styles.inputLabel} ${styles.col1}`}>
-                  <span className={styles.labelRow}>Position:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={position} onChange={(e) => { setPosition(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                <label className={`${styles.inputLabel} ${styles.col2}`}>
-                  <span className={styles.labelRow}>PVV1:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv1} onChange={(e) => { setPvv1(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-
-                {/* Row 4: PVV2 (left) - PVV3 (middle) */}
-                <label className={`${styles.inputLabel} ${styles.col1}`}>
-                  <span className={styles.labelRow}>PVV2:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv2} onChange={(e) => { setPvv2(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                <label className={`${styles.inputLabel} ${styles.col2}`}>
-                  <span className={styles.labelRow}>PVV3:<span className={styles.requiredAsterisk}>*</span></span>
-                  <input className={`${styles.textInput} ${styles.smallInput}`} value={pvv3} onChange={(e) => { setPvv3(e.target.value); setParamsSubmitted(false); }} />
-                </label>
-                {/* place the button in the middle column and span rows 2-3 so it sits among the input boxes */}
-                <div className={styles.buttonMidCell}>
+                {/* Row 2: Input Parameters button */}
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center' }}>
                   <div className={styles.modifyArea} style={{ width: '100%', maxWidth: 220 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                       <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
@@ -739,24 +680,7 @@ const SensorPanel: React.FC = () => {
         <div className={styles.contentContainer}>
           <div className={styles.rightPanel}>
             <div className={styles.chartsGrid}>
-              {/* Row 1: Sensor 1 (250) left, Sensor 1 (50) right */}
-              <div className={styles.chartContainer}>
-                <h3>Sensor 1 Readings (0-{CHART_Y_MAX})</h3>
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={sensor1Data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                    <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} tickFormatter={(v) => String(Math.round(Number(v)))} />
-                    <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} formatter={(value) => Number(value).toFixed(2)} />
-                    <Legend />
-                    <Line type="linear" dataKey="sensorValue" stroke="#8884d8" strokeWidth={2} name="Sensor 1" dot={false} isAnimationActive={false} />
-                    {markers.map((m, i) => (
-                      <ReferenceLine key={`m1-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
+              {/* Sensor 1 (0-50) */}
               <div className={styles.chartContainer}>
                 <h3>Sensor 1 Readings (0-50)</h3>
                 <ResponsiveContainer width="100%" height={320}>
@@ -774,24 +698,7 @@ const SensorPanel: React.FC = () => {
                 </ResponsiveContainer>
               </div>
 
-              {/* Row 2: Sensor 2 (250) left, Sensor 2 (50) right */}
-              <div className={styles.chartContainer}>
-                <h3>Sensor 2 Readings (0-{CHART_Y_MAX})</h3>
-                <ResponsiveContainer width="100%" height={320}>
-                  <LineChart data={sensor2Data}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="time" type="number" domain={["dataMin", "dataMax"]} tickFormatter={(s) => Number(s).toFixed(1)} />
-                    <YAxis domain={[0, CHART_Y_MAX]} tickCount={6} tickFormatter={(v) => String(Math.round(Number(v)))} />
-                    <Tooltip labelFormatter={(label) => `${Number(label).toFixed(2)}s`} formatter={(value) => Number(value).toFixed(2)} />
-                    <Legend />
-                    <Line type="linear" dataKey="sensorValue" stroke="#82ca9d" strokeWidth={2} name="Sensor 2" dot={false} isAnimationActive={false} />
-                    {markers.map((m, i) => (
-                      <ReferenceLine key={`m2-${i}`} x={m.time} stroke={m.type === 'start' ? '#00b050' : '#ff4d4d'} label={m.type} strokeDasharray="3 3" />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-
+              {/* Sensor 2 (0-50) */}
               <div className={styles.chartContainer}>
                 <h3>Sensor 2 Readings (0-50)</h3>
                 <ResponsiveContainer width="100%" height={320}>
