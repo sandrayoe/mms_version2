@@ -27,7 +27,8 @@ const SensorPanel: React.FC = () => {
   const prevImuLenRef = useRef({ s1: 0, s2: 0 });
   const sampleIntervalMs = 20; // assumed device sample interval (20ms -> 50Hz). Adjust if needed.
   const sampleIndexRef = useRef<number>(0);
-  const sessionStartRef = useRef<number | null>(null); // performance.now() at first sample
+  const sessionStartRef = useRef<number | null>(null); // provider timestamp at first sample
+  const sessionWallClockStartRef = useRef<number | null>(null); // Date.now() when session starts
 
   // Internal queues for raw samples; we will flush these incrementally via rAF
   const queuedS1Ref = useRef<{ time: number; sensorValue: number }[]>([]);
@@ -236,6 +237,7 @@ const SensorPanel: React.FC = () => {
       // If we have provider timestamps, set session start to the earliest sample timestamp
       if (minTs !== null && sessionStartRef.current === null) {
         sessionStartRef.current = minTs;
+        sessionWallClockStartRef.current = Date.now(); // Capture actual wall clock time
       }
 
       const pushWithTs = (samples: any[]) => {
@@ -391,11 +393,12 @@ const SensorPanel: React.FC = () => {
     clearIMU();
     prevImuLenRef.current = { s1: 0, s2: 0 };
   recordedRef.current = { sensor1: [], sensor2: [] };
-  recordedAggRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(false);
     sampleIndexRef.current = 0;
     // Ensure session-relative time restarts at 0 for new measurement
     sessionStartRef.current = null;
+    sessionWallClockStartRef.current = null;
+    setIsMeasuring(true);nt = null;
     setIsMeasuring(true);
     startIMU();
     // clear markers when starting a fresh measurement
@@ -518,10 +521,10 @@ const SensorPanel: React.FC = () => {
           paramsForRow = snaps[0].params;
         }
       }
-
       // Convert relative time (seconds) to absolute UTC+1 timestamp in ISO 8601 format
-      // Use sessionStartRef to calculate the actual timestamp for each data point
-      const actualTimestamp = (sessionStartRef.current ?? Date.now()) + (t * 1000);
+      // Use sessionWallClockStartRef + relative time to calculate the actual timestamp for each data point
+      const actualTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (t * 1000);
+      const utcPlus1Time = new Date(actualTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
       const utcPlus1Time = new Date(actualTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
       // Manually format to ensure +01:00 timezone is shown correctly
       const year = utcPlus1Time.getUTCFullYear();
@@ -541,9 +544,9 @@ const SensorPanel: React.FC = () => {
 
     // Append markers section so time markers are preserved in the recording file
     if (markers && markers.length) {
-      csv += '\nmarkers,type,timestamp_utc,relative_time_s\n';
       for (const m of markers) {
-        const markerTimestamp = (sessionStartRef.current ?? Date.now()) + (m.time * 1000);
+        const markerTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (m.time * 1000);
+        const markerUTCPlus1 = new Date(markerTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
         const markerUTCPlus1 = new Date(markerTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
         // Manually format to ensure +01:00 timezone is shown correctly
         const year = markerUTCPlus1.getUTCFullYear();
