@@ -13,6 +13,7 @@ interface BluetoothContextType {
   disconnect: () => Promise<void>;
   isConnected: boolean;
   sendCommand: (...args: (string | number)[]) => Promise<void>;
+  stimulate: (electrode1: number, electrode2: number, amplitude: number, runStop: boolean) => Promise<void>;
   imuData: { imu1_changes: BluetoothSample[]; imu2_changes: BluetoothSample[] };
   startIMU: () => Promise<void>;
   stopIMU: () => Promise<void>;
@@ -453,6 +454,42 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const stimulate = async (electrode1: number, electrode2: number, amplitude: number, runStop: boolean) => {
+    // Validate inputs
+    if (electrode1 < 0 || electrode1 > 31 || electrode2 < 0 || electrode2 > 31) {
+      console.error("Electrode numbers must be between 0 and 31");
+      return;
+    }
+    if (amplitude < 0 || amplitude > 120) {
+      console.error("Amplitude must be between 0 and 120 mA");
+      return;
+    }
+
+    // Convert electrode numbers to ASCII digits
+    // Device expects: UART2_Read() - '0', so we send ASCII characters '0' to '9' for electrodes 0-9
+    // For electrodes 10-31, we use characters beyond '9' (e.g., ':' for 10, ';' for 11, etc.)
+    const toAsciiDigit = (n: number) => String.fromCharCode(0x30 + n); // '0' + n
+    
+    // Build 8 electrode bytes (repeat electrode pair 4 times)
+    const e1 = toAsciiDigit(electrode1);
+    const e2 = toAsciiDigit(electrode2);
+    const electrodes = e1 + e2 + e1 + e2 + e1 + e2 + e1 + e2;
+    
+    // Amplitude as 2 ASCII decimal digits (e.g., 50 -> '5' '0')
+    // GetPacketBinASCII() reads 2 bytes and converts: (byte1 - '0') * 10 + (byte2 - '0')
+    const ampStr = amplitude.toString().padStart(2, '0'); // e.g., "50" or "05"
+    
+    // Run/Stop: ASCII digit '0' or '1'
+    // Device reads: UART2_Read() - '0', so we send '0' (0x30) or '1' (0x31)
+    const runStopChar = runStop ? '1' : '0';
+    
+    // Send command: 'E' + 8 electrode ASCII chars + 2 amplitude ASCII digits + 1 runStop ASCII digit
+    // Total: 1 + 8 + 2 + 1 = 12 bytes
+    await sendCommand('E' + electrodes + ampStr + runStopChar);
+    
+    console.log(`Stimulation command sent: E${electrodes}${ampStr}${runStopChar} (Electrodes: ${electrode1},${electrode2} | Amplitude: ${amplitude}mA | ${runStop ? 'Go' : 'Stop'})`);
+  };
+
   // Drain pending pairs into React state at a controlled rate to throttle
   // UI updates and reduce rAF/reconciliation pressure.
   useEffect(() => {
@@ -542,6 +579,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       disconnect,
       isConnected,
       sendCommand,
+      stimulate,
       imuData,
       startIMU,
       stopIMU,

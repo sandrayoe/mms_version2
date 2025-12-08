@@ -7,7 +7,7 @@ import styles from "./NMESControl.module.css";
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine } from "recharts";
 
 const SensorPanel: React.FC = () => {
-  const { isConnected, imuData, startIMU, stopIMU, clearIMU } = useBluetooth();
+  const { isConnected, imuData, startIMU, stopIMU, clearIMU, stimulate } = useBluetooth();
 
   const [sensor1Data, setSensor1Data] = useState<{ time: number; sensorValue: number }[]>([]);
   const [sensor2Data, setSensor2Data] = useState<{ time: number; sensorValue: number }[]>([]);
@@ -69,6 +69,11 @@ const SensorPanel: React.FC = () => {
   // User inputs for file naming and parameters
   const [frequency, setFrequency] = useState<string>("");
   const [intensity, setIntensity] = useState<string>("");
+  // Electrode selection for stimulation
+  const [electrode1, setElectrode1] = useState<string>("1");
+  const [electrode2, setElectrode2] = useState<string>("2");
+  const [amplitude, setAmplitude] = useState<string>("5");
+  const [isStimulating, setIsStimulating] = useState<boolean>(false);
   const [modifyMode, setModifyMode] = useState<boolean>(false);
   // New inputs for saving metadata
   const [patientName, setPatientName] = useState<string>("");
@@ -461,6 +466,22 @@ const SensorPanel: React.FC = () => {
     setMarkers((prev) => [...prev, { time: latestTime, type: newPaused ? "pause" : "resume" }]);
   };
 
+  const handleStimulate = async () => {
+    const e1 = parseInt(electrode1);
+    const e2 = parseInt(electrode2);
+    const amp = parseInt(amplitude);
+    
+    if (isNaN(e1) || isNaN(e2) || isNaN(amp)) {
+      window.alert('Please enter valid numbers for electrodes and amplitude');
+      return;
+    }
+    
+    const newState = !isStimulating;
+    setIsStimulating(newState);
+    // Subtract 1 from electrode numbers: user input 1-32 maps to device 0-31
+    await stimulate(e1 - 1, e2 - 1, amp, newState);
+  };
+
   const handleSaveRecording = () => {
     // Merge sensor1 and sensor2 by time and produce CSV with headers: time,sensor1,sensor2,<params...>
     const s1 = recordedRef.current.sensor1 ?? [];
@@ -660,10 +681,60 @@ const SensorPanel: React.FC = () => {
                   Stop Recording
                 </button>
               </div>
+            </div>
 
+            {/* Stimulation Control Section */}
+            <div style={{ marginTop: '16px', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}>
+              <h4 style={{ marginTop: 0 }}>Electrode Stimulation</h4>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', alignItems: 'flex-end' }}>
+                <label className={styles.inputLabel}>
+                  <span className={styles.labelRow}>Electrode 1:</span>
+                  <input 
+                    className={`${styles.textInput} ${styles.smallInput}`} 
+                    type="number" 
+                    min="1" 
+                    max="32" 
+                    value={electrode1} 
+                    onChange={(e) => setElectrode1(e.target.value)} 
+                  />
+                </label>
+                <label className={styles.inputLabel}>
+                  <span className={styles.labelRow}>Electrode 2:</span>
+                  <input 
+                    className={`${styles.textInput} ${styles.smallInput}`} 
+                    type="number" 
+                    min="1" 
+                    max="32" 
+                    value={electrode2} 
+                    onChange={(e) => setElectrode2(e.target.value)} 
+                  />
+                </label>
+                <label className={styles.inputLabel}>
+                  <span className={styles.labelRow}>Amplitude (mA):</span>
+                  <input 
+                    className={`${styles.textInput} ${styles.smallInput}`} 
+                    type="number" 
+                    min="0" 
+                    max="120" 
+                    value={amplitude} 
+                    onChange={(e) => setAmplitude(e.target.value)} 
+                  />
+                </label>
+                <button 
+                  className={styles.button} 
+                  onClick={handleStimulate} 
+                  disabled={!isConnected}
+                  style={{ backgroundColor: isStimulating ? '#ff4d4d' : undefined }}
+                >
+                  {isStimulating ? 'Stop Stimulation' : 'Start Stimulation'}
+                </button>
+              </div>
+              <div style={{ fontSize: '12px', color: '#666' }}>
+                Command: E{electrode1}{electrode2}{electrode1}{electrode2}{electrode1}{electrode2}{electrode1}{electrode2}{String(amplitude).padStart(2, '0')}{isStimulating ? '1' : '0'}
+              </div>
+            </div>
               
             </div>
-          </div>
 
           {/* New gray save panel on the right side */}
           <div className={styles.savePanel}>
