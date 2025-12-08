@@ -123,6 +123,8 @@ const SensorPanel: React.FC = () => {
         intensity: intensity || 'N/A',
         rampUp: rampUp || 'N/A',
         rampDown: rampDown || 'N/A',
+        electrode1: electrode1 || 'N/A',
+        electrode2: electrode2 || 'N/A',
       });
       // mark submitted since user explicitly applied/submitted parameters
       setParamsSubmitted(true);
@@ -161,6 +163,8 @@ const SensorPanel: React.FC = () => {
       intensity: intensity || 'N/A',
       rampUp: rampUp || 'N/A',
       rampDown: rampDown || 'N/A',
+      electrode1: electrode1 || 'N/A',
+      electrode2: electrode2 || 'N/A',
     });
     setParamsSubmitted(true);
     setLastAppliedTime(latestTime);
@@ -506,7 +510,7 @@ const SensorPanel: React.FC = () => {
     };
 
   // Define parameter column order
-  const paramCols = ['frequency','intensity','rampUp','rampDown'];
+  const paramCols = ['frequency','amplitude','electrode1','electrode2'];
   // Add patient/sensor metadata columns to header
   const metaCols = ['patientName','sensorName'];
 
@@ -524,7 +528,9 @@ const SensorPanel: React.FC = () => {
         // no snapshots recorded; use current UI values as best-effort
         paramsForRow = {
           frequency: frequency || 'N/A',
-          intensity: intensity || 'N/A'
+          amplitude: amplitude || 'N/A',
+          electrode1: electrode1 || 'N/A',
+          electrode2: electrode2 || 'N/A'
         };
       } else {
         // if the current snapIdx's time is <= t, use it; otherwise use the earliest snap (fallback)
