@@ -520,8 +520,9 @@ const SensorPanel: React.FC = () => {
       }
 
       // Convert relative time (seconds) to absolute UTC+1 timestamp in ISO 8601 format
-      const utcTime = Date.now() + (t - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000;
-      const utcPlus1Time = new Date(utcTime + 60 * 60 * 1000); // Add 1 hour in milliseconds
+      // Use sessionStartRef to calculate the actual timestamp for each data point
+      const actualTimestamp = (sessionStartRef.current ?? Date.now()) + (t * 1000);
+      const utcPlus1Time = new Date(actualTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
       const absoluteTimestamp = utcPlus1Time.toISOString().replace('Z', '+01:00');
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
@@ -534,8 +535,8 @@ const SensorPanel: React.FC = () => {
     if (markers && markers.length) {
       csv += '\nmarkers,type,timestamp_utc,relative_time_s\n';
       for (const m of markers) {
-        const markerUTCTime = Date.now() + (m.time - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000;
-        const markerUTCPlus1 = new Date(markerUTCTime + 60 * 60 * 1000); // Add 1 hour
+        const markerTimestamp = (sessionStartRef.current ?? Date.now()) + (m.time * 1000);
+        const markerUTCPlus1 = new Date(markerTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
         const markerUTC = markerUTCPlus1.toISOString().replace('Z', '+01:00');
         csv += `${m.type},${m.type},${markerUTC},${m.time}\n`;
       }
