@@ -519,8 +519,10 @@ const SensorPanel: React.FC = () => {
         }
       }
 
-      // Convert relative time (seconds) to absolute UTC timestamp in ISO 8601 format
-      const absoluteTimestamp = new Date(Date.now() + (t - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000).toISOString();
+      // Convert relative time (seconds) to absolute UTC+1 timestamp in ISO 8601 format
+      const utcTime = Date.now() + (t - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000;
+      const utcPlus1Time = new Date(utcTime + 60 * 60 * 1000); // Add 1 hour in milliseconds
+      const absoluteTimestamp = utcPlus1Time.toISOString().replace('Z', '+01:00');
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
   const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
@@ -532,7 +534,9 @@ const SensorPanel: React.FC = () => {
     if (markers && markers.length) {
       csv += '\nmarkers,type,timestamp_utc,relative_time_s\n';
       for (const m of markers) {
-        const markerUTC = new Date(Date.now() + (m.time - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000).toISOString();
+        const markerUTCTime = Date.now() + (m.time - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000;
+        const markerUTCPlus1 = new Date(markerUTCTime + 60 * 60 * 1000); // Add 1 hour
+        const markerUTC = markerUTCPlus1.toISOString().replace('Z', '+01:00');
         csv += `${m.type},${m.type},${markerUTC},${m.time}\n`;
       }
     }
@@ -547,9 +551,9 @@ const SensorPanel: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    // Build user-friendly filename with ISO 8601 UTC timestamp
-    const utcTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  a.download = `mms_${patientPart}_${sensorPart}_${utcTimestamp}.csv`;
+    // Build user-friendly filename with ISO 8601 UTC+1 timestamp
+    const utcPlus1Timestamp = new Date(Date.now() + 60 * 60 * 1000).toISOString().replace(/[:.]/g, '-').replace('Z', '+01-00');
+  a.download = `mms_${patientPart}_${sensorPart}_${utcPlus1Timestamp}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
