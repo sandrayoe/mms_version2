@@ -7,7 +7,7 @@ import styles from "./NMESControl.module.css";
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine } from "recharts";
 
 const SensorPanel: React.FC = () => {
-  const { isConnected, imuData, startIMU, stopIMU, clearIMU, stimulate } = useBluetooth();
+  const { isConnected, imuData, startIMU, stopIMU, clearIMU, stimulate, sendCommand, lastResponse } = useBluetooth();
 
   const [sensor1Data, setSensor1Data] = useState<{ time: number; sensorValue: number }[]>([]);
   const [sensor2Data, setSensor2Data] = useState<{ time: number; sensorValue: number }[]>([]);
@@ -69,6 +69,8 @@ const SensorPanel: React.FC = () => {
   // User inputs for file naming and parameters
   const [frequency, setFrequency] = useState<string>("");
   const [intensity, setIntensity] = useState<string>("");
+  const [rampUp, setRampUp] = useState<string>("");
+  const [rampDown, setRampDown] = useState<string>("");
   // Electrode selection for stimulation
   const [electrode1, setElectrode1] = useState<string>("1");
   const [electrode2, setElectrode2] = useState<string>("2");
@@ -100,17 +102,16 @@ const SensorPanel: React.FC = () => {
   const [showApplied, setShowApplied] = useState(false);
 
   // Manual snapshot application: user presses "Modify" to record parameter changes into snapshots
-  const handleApplyModify = () => {
-    // Validate required fields before applying
-    const requiredChecks: Array<{ key: string; label: string; value: string }> = [
-      { key: 'frequency', label: 'Frequency', value: frequency },
-      { key: 'intensity', label: 'Intensity', value: intensity },
-    ];
-
-    const missing = requiredChecks.filter((r) => !r.value || r.value.trim() === '').map((r) => r.label);
-    if (missing.length) {
-      // show a clear alert and avoid saving
-      window.alert(`Please fill the required fields before applying: ${missing.join(', ')}`);
+  const handleApplyModify = async () => {
+    // Send commands to device
+    try {
+      if (frequency) await sendCommand('f' + frequency);
+      if (rampUp) await sendCommand('r' + rampUp);
+      if (rampDown) await sendCommand('R' + rampDown);
+      await sendCommand('s');
+    } catch (err) {
+      console.error('Failed to send parameters:', err);
+      window.alert('Failed to send parameters to device');
       return;
     }
 
@@ -120,13 +121,15 @@ const SensorPanel: React.FC = () => {
       pushParamSnapshot(t, {
         frequency: frequency || 'N/A',
         intensity: intensity || 'N/A',
+        rampUp: rampUp || 'N/A',
+        rampDown: rampDown || 'N/A',
       });
       // mark submitted since user explicitly applied/submitted parameters
       setParamsSubmitted(true);
       setLastAppliedTime(t);
       setShowApplied(true);
       setTimeout(() => setShowApplied(false), 1500);
-      window.alert('Input parameters saved.');
+      window.alert('Input parameters sent. s-ok expected from device.');
       return;
     }
 
@@ -156,6 +159,8 @@ const SensorPanel: React.FC = () => {
     pushParamSnapshot(latestTime, {
       frequency: frequency || 'N/A',
       intensity: intensity || 'N/A',
+      rampUp: rampUp || 'N/A',
+      rampDown: rampDown || 'N/A',
     });
     setParamsSubmitted(true);
     setLastAppliedTime(latestTime);
@@ -416,18 +421,6 @@ const SensorPanel: React.FC = () => {
 
   // Recording controls
   const handleStartRecording = () => {
-    // Validate required input parameters before starting recording. If missing,
-    // show a popup to remind the user to fill them.
-    const requiredChecks: Array<{ key: string; label: string; value: string }> = [
-      { key: 'frequency', label: 'Frequency', value: frequency },
-      { key: 'intensity', label: 'Intensity', value: intensity },
-    ];
-    const missing = requiredChecks.filter((r) => !r.value || r.value.trim() === '').map((r) => r.label);
-    if (missing.length) {
-      window.alert(`Please fill the required fields before starting recording: ${missing.join(', ')}`);
-      return;
-    }
-
   recordedRef.current = { sensor1: [], sensor2: [] };
   recordedAggRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(true);
@@ -513,7 +506,7 @@ const SensorPanel: React.FC = () => {
     };
 
   // Define parameter column order
-  const paramCols = ['frequency','intensity'];
+  const paramCols = ['frequency','intensity','rampUp','rampDown'];
   // Add patient/sensor metadata columns to header
   const metaCols = ['patientName','sensorName'];
 
@@ -637,16 +630,21 @@ const SensorPanel: React.FC = () => {
           <div className={styles.controlBox}>
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
-              {/* Simplified parameter inputs - Row 1: Frequency and Intensity centered */}
+              {/* Row 1: Frequency, Ramp-Up, Ramp-Down */}
                 <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '8px' }}>
                   <label className={styles.inputLabel}>
-                    <span className={styles.labelRow}>Frequency (Hz):<span className={styles.requiredAsterisk}>*</span></span>
-                    <input className={`${styles.textInput} ${styles.smallInput}`} value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
+                    <span className={styles.labelRow}>Frequency (Hz):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="15" max="50" value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
                   </label>
 
                   <label className={styles.inputLabel}>
-                    <span className={styles.labelRow}>Intensity (mA):<span className={styles.requiredAsterisk}>*</span></span>
-                    <input className={`${styles.textInput} ${styles.smallInput}`} value={intensity} onChange={(e) => { setIntensity(e.target.value); setParamsSubmitted(false); }} />
+                    <span className={styles.labelRow}>Ramp-Up (ds):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" value={rampUp} onChange={(e) => { setRampUp(e.target.value); setParamsSubmitted(false); }} />
+                  </label>
+
+                  <label className={styles.inputLabel}>
+                    <span className={styles.labelRow}>Ramp-Down (ds):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" value={rampDown} onChange={(e) => { setRampDown(e.target.value); setParamsSubmitted(false); }} />
                   </label>
                 </div>
 
@@ -662,6 +660,11 @@ const SensorPanel: React.FC = () => {
                           <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
                         )}
                       </div>
+                      {lastResponse && (
+                        <div style={{ fontSize: '12px', color: lastResponse.includes('ok') ? '#00b050' : '#666', marginTop: '4px' }}>
+                          Device: {lastResponse}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

@@ -18,6 +18,7 @@ interface BluetoothContextType {
   startIMU: () => Promise<void>;
   stopIMU: () => Promise<void>;
   clearIMU: () => void;
+  lastResponse: string | null;
 }
 
 export const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -27,6 +28,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [device, setDevice] = useState<BluetoothDevice | null>(null);
   const [rxCharacteristic, setRxCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
   const [txCharacteristic, setTxCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
+  const [lastResponse, setLastResponse] = useState<string | null>(null);
 
   const deviceRef = useRef<BluetoothDevice | null>(null);
   const isManualDisconnectRef = useRef(false);
@@ -392,19 +394,43 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const target = event.target as BluetoothRemoteGATTCharacteristic;
     if (!target || !target.value) return;
     const rawBytes = new Uint8Array(target.value.buffer);
-    // Push into the lightweight queue and schedule processing at a controlled
-    // rate to avoid long synchronous work in the message handler.
-    try {
-      rawQueueRef.current.push({ bytes: rawBytes, arrivalTs: performance.now() });
-    } catch (e) {
-      // if push fails for some reason, try processing directly as a fallback
-      try { handleIMUData({ bytes: rawBytes, arrivalTs: performance.now() }); } catch (ee) {}
-      return;
+    
+    // Try to detect if this is a text response (ASCII printable characters)
+    // Text responses typically contain letters and are relatively short
+    let isTextResponse = false;
+    if (rawBytes.length > 0 && rawBytes.length < 50) {
+      // Check if most bytes are printable ASCII (32-126) or common control chars (10, 13)
+      const printableCount = Array.from(rawBytes).filter(
+        b => (b >= 32 && b <= 126) || b === 10 || b === 13
+      ).length;
+      isTextResponse = printableCount / rawBytes.length > 0.8;
     }
+    
+    if (isTextResponse) {
+      // Parse as text response
+      try {
+        const text = new TextDecoder().decode(rawBytes).trim();
+        if (text.length > 0) {
+          console.log('Device response:', text);
+          setLastResponse(text);
+        }
+      } catch (e) {
+        // ignore decode errors
+      }
+    } else {
+      // Process as IMU sensor data
+      try {
+        rawQueueRef.current.push({ bytes: rawBytes, arrivalTs: performance.now() });
+      } catch (e) {
+        // if push fails for some reason, try processing directly as a fallback
+        try { handleIMUData({ bytes: rawBytes, arrivalTs: performance.now() }); } catch (ee) {}
+        return;
+      }
 
-    if (!rawQueueProcessingRef.current) {
-      rawQueueProcessingRef.current = true;
-      setTimeout(processRawQueue, PROCESS_MS);
+      if (!rawQueueProcessingRef.current) {
+        rawQueueProcessingRef.current = true;
+        setTimeout(processRawQueue, PROCESS_MS);
+      }
     }
   };
 
@@ -584,6 +610,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       startIMU,
       stopIMU,
       clearIMU,
+      lastResponse,
       // spike helpers removed
     }}>
       {children}
