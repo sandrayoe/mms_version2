@@ -494,8 +494,8 @@ const SensorPanel: React.FC = () => {
   // Add patient/sensor metadata columns to header
   const metaCols = ['patientName','sensorName'];
 
-  // Build header (include meta columns after sensors)
-  let csv = ['time','sensor1','sensor2', ...paramCols, ...metaCols].join(',') + '\n';
+  // Build header (include UTC timestamp, sensor values, params, metadata, and relative time)
+  let csv = ['timestamp_utc','sensor1','sensor2', ...paramCols, ...metaCols, 'relative_time_s'].join(',') + '\n';
 
     // Use a pointer into snaps because times are sorted ascending
     let snapIdx = 0;
@@ -519,18 +519,21 @@ const SensorPanel: React.FC = () => {
         }
       }
 
+      // Convert relative time (seconds) to absolute UTC timestamp in ISO 8601 format
+      const absoluteTimestamp = new Date(Date.now() + (t - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000).toISOString();
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
   const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
   const metaVals = [escapeCSV(patientName || 'N/A'), escapeCSV(sensorName || 'N/A')];
-  csv += `${t},${v1},${v2},${paramVals.join(',')},${metaVals.join(',')}\n`;
+  csv += `${absoluteTimestamp},${v1},${v2},${paramVals.join(',')},${metaVals.join(',')},${t}\n`;
     }
 
     // Append markers section so time markers are preserved in the recording file
     if (markers && markers.length) {
-      csv += '\nmarkers,type,time\n';
+      csv += '\nmarkers,type,timestamp_utc,relative_time_s\n';
       for (const m of markers) {
-        csv += `${m.type},${m.type},${m.time}\n`;
+        const markerUTC = new Date(Date.now() + (m.time - (sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0)) * 1000).toISOString();
+        csv += `${m.type},${m.type},${markerUTC},${m.time}\n`;
       }
     }
 
@@ -544,11 +547,9 @@ const SensorPanel: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    // Build user-friendly filename including provided inputs, use compact numeric timestamp (no Z, no colons)
-    const d = new Date();
-    const pad = (n: number, w = 2) => String(n).padStart(w, '0');
-    const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3, '0')}`;
-  a.download = `mms_${patientPart}_${sensorPart}_${iso}.csv`;
+    // Build user-friendly filename with ISO 8601 UTC timestamp
+    const utcTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  a.download = `mms_${patientPart}_${sensorPart}_${utcTimestamp}.csv`;
     document.body.appendChild(a);
     a.click();
     a.remove();
