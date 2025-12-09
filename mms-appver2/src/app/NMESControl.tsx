@@ -69,6 +69,8 @@ const SensorPanel: React.FC = () => {
   const [electrode2, setElectrode2] = useState<string>("2");
   const [amplitude, setAmplitude] = useState<string>("5");
   const [isStimulating, setIsStimulating] = useState<boolean>(false);
+  const [isContinuousMeasuring, setIsContinuousMeasuring] = useState<boolean>(false);
+  const continuousMeasurementTimerRef = useRef<NodeJS.Timeout | null>(null);
   // New inputs for saving metadata
   const [patientName, setPatientName] = useState<string>("");
   const [sensorName, setSensorName] = useState<string>("");
@@ -433,6 +435,60 @@ const SensorPanel: React.FC = () => {
     await measureImpedance();
   };
 
+  const handleContinuousMeasurement = async () => {
+    const e1 = parseInt(electrode1, 10);
+    const e2 = parseInt(electrode2, 10);
+    const amp = parseInt(amplitude, 10);
+
+    if (isNaN(e1) || isNaN(e2) || isNaN(amp) || e1 < 1 || e1 > 32 || e2 < 1 || e2 > 32 || amp < 0) {
+      window.alert('Please enter valid numbers for electrodes and amplitude');
+      return;
+    }
+
+    setIsContinuousMeasuring(true);
+
+    try {
+      // Step 1: Send G command (initialize impedance)
+      const electrodes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      await initializeImpedance(electrodes);
+      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for initialization
+
+      // Step 2: Send g command (first measurement) and wait for data
+      await measureImpedance();
+      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for data to be received
+
+      // Step 3: Send E command to start stimulation
+      await stimulate(e1 - 1, e2 - 1, amp, true);
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Step 4: Send E command to stop stimulation
+      await stimulate(e1 - 1, e2 - 1, amp, false);
+      await new Promise(resolve => setTimeout(resolve, 50)); // Short wait after stopping
+
+      // Step 5: Send g command (second measurement) and wait for data
+      await measureImpedance();
+      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for data to be received
+
+      // Step 6: Send g command (third measurement) and wait for data
+      await measureImpedance();
+      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for data to be received
+
+      setIsContinuousMeasuring(false);
+    } catch (err) {
+      console.error('Continuous measurement failed:', err);
+      setIsContinuousMeasuring(false);
+    }
+  };
+
+  // Cleanup continuous measurement on unmount
+  useEffect(() => {
+    return () => {
+      if (continuousMeasurementTimerRef.current) {
+        clearInterval(continuousMeasurementTimerRef.current as unknown as number);
+      }
+    };
+  }, []);
+
   const handleSaveRecording = () => {
     // Merge sensor1 and sensor2 by time and produce CSV with headers: time,sensor1,sensor2,<params...>
     const s1 = recordedRef.current.sensor1 ?? [];
@@ -754,7 +810,7 @@ const SensorPanel: React.FC = () => {
             {/* Impedance Measurement Section */}
             <div style={{ marginTop: '16px', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}>
               <h4 style={{ marginTop: 0 }}>Impedance Measurement</h4>
-              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
                 <button 
                   className={styles.button} 
                   onClick={handleInitializeImpedance} 
@@ -768,6 +824,14 @@ const SensorPanel: React.FC = () => {
                   disabled={!isConnected}
                 >
                   Measure Impedance
+                </button>
+                <button 
+                  className={styles.button} 
+                  onClick={handleContinuousMeasurement} 
+                  disabled={!isConnected || isContinuousMeasuring}
+                  style={{ backgroundColor: isContinuousMeasuring ? '#999' : undefined }}
+                >
+                  {isContinuousMeasuring ? 'Measuring...' : 'Continuous Measurement'}
                 </button>
                 <button 
                   className={styles.button} 

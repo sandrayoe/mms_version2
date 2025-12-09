@@ -569,10 +569,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const measureImpedance = async () => {
-    // Clear previous impedance data before starting new measurement
-    setImpedanceData([]);
-    
     // Send 'g' command to start contact scan
+    // Data will accumulate across measurements until manually cleared
     await sendCommand('g');
     console.log('Impedance measurement started (g command sent)');
     
