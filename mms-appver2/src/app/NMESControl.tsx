@@ -114,7 +114,6 @@ const SensorPanel: React.FC = () => {
       const t = 0;
       pushParamSnapshot(t, {
         frequency: frequency || 'N/A',
-        intensity: intensity || 'N/A',
         rampUp: rampUp || 'N/A',
         rampDown: rampDown || 'N/A',
         electrode1: electrode1 || 'N/A',
@@ -149,7 +148,6 @@ const SensorPanel: React.FC = () => {
     if (!ok) return;
     pushParamSnapshot(latestTime, {
       frequency: frequency || 'N/A',
-      intensity: intensity || 'N/A',
       rampUp: rampUp || 'N/A',
       rampDown: rampDown || 'N/A',
       electrode1: electrode1 || 'N/A',
@@ -585,17 +583,17 @@ const SensorPanel: React.FC = () => {
                 <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '8px' }}>
                   <label className={styles.inputLabel}>
                     <span className={styles.labelRow}>Frequency (Hz):</span>
-                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="15" max="50" value={frequency} onChange={(e) => { setFrequency(e.target.value); setParamsSubmitted(false); }} />
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="15" max="50" value={frequency} onChange={(e) => { setFrequency(e.target.value);}} />
                   </label>
 
                   <label className={styles.inputLabel}>
                     <span className={styles.labelRow}>Ramp-Up (ds):</span>
-                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" value={rampUp} onChange={(e) => { setRampUp(e.target.value); setParamsSubmitted(false); }} />
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" value={rampUp} onChange={(e) => { setRampUp(e.target.value); }} />
                   </label>
 
                   <label className={styles.inputLabel}>
                     <span className={styles.labelRow}>Ramp-Down (ds):</span>
-                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" value={rampDown} onChange={(e) => { setRampDown(e.target.value); setParamsSubmitted(false); }} />
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" value={rampDown} onChange={(e) => { setRampDown(e.target.value);}} />
                   </label>
                 </div>
 
