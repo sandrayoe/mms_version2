@@ -19,6 +19,10 @@ interface BluetoothContextType {
   stopIMU: () => Promise<void>;
   clearIMU: () => void;
   lastResponse: string | null;
+  initializeImpedance: (electrodes: number[]) => Promise<void>;
+  measureImpedance: () => Promise<void>;
+  impedanceData: string[];
+  clearImpedanceData: () => void;
 }
 
 export const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -29,6 +33,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [rxCharacteristic, setRxCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
   const [txCharacteristic, setTxCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
   const [lastResponse, setLastResponse] = useState<string | null>(null);
+  const [impedanceData, setImpedanceData] = useState<string[]>([]);
 
   const deviceRef = useRef<BluetoothDevice | null>(null);
   const isManualDisconnectRef = useRef(false);
@@ -413,6 +418,13 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (text.length > 0) {
           console.log('Device response:', text);
           setLastResponse(text);
+          
+          // Check if this is impedance data (numeric values, could be resistance measurements)
+          // Impedance values are typically numeric strings, possibly with spaces or commas
+          if (/^[\d\s,\.]+$/.test(text)) {
+            setImpedanceData(prev => [...prev, text]);
+            console.log('Impedance data captured:', text);
+          }
         }
       } catch (e) {
         // ignore decode errors
@@ -516,6 +528,51 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     console.log(`Stimulation command sent: E${electrodes}${ampStr}${runStopChar} (Electrodes: ${electrode1},${electrode2} | Amplitude: ${amplitude}mA | ${runStop ? 'Go' : 'Stop'})`);
   };
 
+  const initializeImpedance = async (electrodes: number[]) => {
+    // Command G: 16 bytes total, electrodes as ASCII characters
+    // For 9 electrodes (0-8), we send them as ASCII and then use 'P' (0x50) as terminator
+    // Remaining bytes filled with 'P' or higher to ignore
+    
+    const commandBytes: string[] = [];
+    
+    // Add valid electrodes (up to 9)
+    for (let i = 0; i < electrodes.length && i < 9; i++) {
+      const electrode = electrodes[i];
+      if (electrode < 0 || electrode > 31) {
+        console.error(`Electrode ${electrode} out of range (0-31)`);
+        return;
+      }
+      // Convert to ASCII: 0x30 + electrode number
+      commandBytes.push(String.fromCharCode(0x30 + electrode));
+    }
+    
+    // Fill remaining slots with 'P' (0x50) to mark end and pad to 16 bytes
+    while (commandBytes.length < 16) {
+      commandBytes.push('P');
+    }
+    
+    // Send 'G' followed by the 16 electrode bytes
+    const fullCommand = 'G' + commandBytes.join('');
+    await sendCommand(fullCommand);
+    console.log('Impedance initialization sent:', fullCommand);
+  };
+
+  const measureImpedance = async () => {
+    // Clear previous impedance data before starting new measurement
+    setImpedanceData([]);
+    
+    // Send 'g' command to start contact scan
+    await sendCommand('g');
+    console.log('Impedance measurement started (g command sent)');
+    
+    // Note: Impedance data will be received via handleIncomingData
+    // and captured as text responses, then added to impedanceData state
+  };
+
+  const clearImpedanceData = () => {
+    setImpedanceData([]);
+  };
+
   // Drain pending pairs into React state at a controlled rate to throttle
   // UI updates and reduce rAF/reconciliation pressure.
   useEffect(() => {
@@ -611,6 +668,10 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       stopIMU,
       clearIMU,
       lastResponse,
+      initializeImpedance,
+      measureImpedance,
+      impedanceData,
+      clearImpedanceData,
       // spike helpers removed
     }}>
       {children}

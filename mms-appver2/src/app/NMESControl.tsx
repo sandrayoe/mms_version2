@@ -7,7 +7,7 @@ import styles from "./NMESControl.module.css";
 import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ReferenceLine } from "recharts";
 
 const SensorPanel: React.FC = () => {
-  const { isConnected, imuData, startIMU, stopIMU, clearIMU, stimulate, sendCommand, lastResponse } = useBluetooth();
+  const { isConnected, imuData, startIMU, stopIMU, clearIMU, stimulate, sendCommand, lastResponse, initializeImpedance, measureImpedance, impedanceData, clearImpedanceData } = useBluetooth();
 
   const [sensor1Data, setSensor1Data] = useState<{ time: number; sensorValue: number }[]>([]);
   const [sensor2Data, setSensor2Data] = useState<{ time: number; sensorValue: number }[]>([]);
@@ -74,6 +74,8 @@ const SensorPanel: React.FC = () => {
   const [sensorName, setSensorName] = useState<string>("");
   // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
   const paramSnapshotsRef = useRef<Array<{ time: number; params: Record<string, string> }>>([]);
+  // Impedance measurements storage
+  const impedanceMeasurementsRef = useRef<Array<{ time: number; data: string[] }>>([]);
 
   // Helper to append a parameter snapshot (keeps chronological order)
   const pushParamSnapshot = (time: number, params: Record<string,string>) => {
@@ -370,6 +372,7 @@ const SensorPanel: React.FC = () => {
   // Recording controls
   const handleStartRecording = () => {
     recordedRef.current = { sensor1: [], sensor2: [] };
+    impedanceMeasurementsRef.current = [];
     setIsRecording(true);
     setIsPausedRecording(false);
     // add a start marker at the current chart time (fallback to 0)
@@ -420,6 +423,32 @@ const SensorPanel: React.FC = () => {
     setIsStimulating(newState);
     // Subtract 1 from electrode numbers: user input 1-32 maps to device 0-31
     await stimulate(e1 - 1, e2 - 1, amp, newState);
+  };
+
+  const handleInitializeImpedance = async () => {
+    // Initialize with electrodes 0-8 (9 electrodes total)
+    const electrodes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    await initializeImpedance(electrodes);
+    // Device will respond with G-ok, shown in lastResponse
+  };
+
+  const handleMeasureImpedance = async () => {
+    await measureImpedance();
+    
+    // Record impedance measurement with timestamp if recording
+    if (isRecording && !isPausedRecording) {
+      const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0;
+      // Wait a moment for data to arrive, then capture
+      setTimeout(() => {
+        if (impedanceData.length > 0) {
+          impedanceMeasurementsRef.current.push({
+            time: latestTime,
+            data: [...impedanceData]
+          });
+          console.log(`Impedance measurement recorded at t=${latestTime}s`);
+        }
+      }, 2000); // Wait 2 seconds for impedance data to arrive
+    }
   };
 
   const handleSaveRecording = () => {
@@ -501,6 +530,27 @@ const SensorPanel: React.FC = () => {
   const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
   const metaVals = [escapeCSV(patientName || 'N/A'), escapeCSV(sensorName || 'N/A')];
   csv += `${absoluteTimestamp},${v1},${v2},${paramVals.join(',')},${metaVals.join(',')},${t}\n`;
+    }
+
+    // Append impedance measurements section
+    if (impedanceMeasurementsRef.current && impedanceMeasurementsRef.current.length > 0) {
+      csv += '\n--- Impedance Measurements ---\n';
+      csv += 'timestamp_utc,relative_time_s,impedance_data\n';
+      for (const imp of impedanceMeasurementsRef.current) {
+        const impTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (imp.time * 1000);
+        const impUTCPlus1 = new Date(impTimestamp + 60 * 60 * 1000);
+        const year = impUTCPlus1.getUTCFullYear();
+        const month = String(impUTCPlus1.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(impUTCPlus1.getUTCDate()).padStart(2, '0');
+        const hours = String(impUTCPlus1.getUTCHours()).padStart(2, '0');
+        const minutes = String(impUTCPlus1.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(impUTCPlus1.getUTCSeconds()).padStart(2, '0');
+        const milliseconds = String(impUTCPlus1.getUTCMilliseconds()).padStart(3, '0');
+        const impUTC = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
+        // Join impedance data with semicolons to keep it in one cell
+        const impDataStr = escapeCSV(imp.data.join('; '));
+        csv += `${impUTC},${imp.time},${impDataStr}\n`;
+      }
     }
 
     // Append markers section so time markers are preserved in the recording file
@@ -679,6 +729,49 @@ const SensorPanel: React.FC = () => {
               <div style={{ fontSize: '12px', color: '#666' }}>
                 Command: E{electrode1}{electrode2}{electrode1}{electrode2}{electrode1}{electrode2}{electrode1}{electrode2}{String(amplitude).padStart(2, '0')}{isStimulating ? '1' : '0'}
               </div>
+            </div>
+
+            {/* Impedance Measurement Section */}
+            <div style={{ marginTop: '16px', padding: '12px', border: '1px solid #ddd', borderRadius: '4px' }}>
+              <h4 style={{ marginTop: 0 }}>Impedance Measurement</h4>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', alignItems: 'center' }}>
+                <button 
+                  className={styles.button} 
+                  onClick={handleInitializeImpedance} 
+                  disabled={!isConnected}
+                >
+                  Initialize (9e)
+                </button>
+                <button 
+                  className={styles.button} 
+                  onClick={handleMeasureImpedance} 
+                  disabled={!isConnected}
+                >
+                  Measure Impedance
+                </button>
+                <button 
+                  className={styles.button} 
+                  onClick={clearImpedanceData} 
+                  disabled={!isConnected || impedanceData.length === 0}
+                >
+                  Clear Data
+                </button>
+              </div>
+              {lastResponse && (lastResponse.includes('G-ok') || lastResponse.includes('g')) && (
+                <div style={{ fontSize: '12px', color: lastResponse.includes('ok') ? '#00b050' : '#666', marginBottom: '8px' }}>
+                  Device: {lastResponse}
+                </div>
+              )}
+              <div style={{ fontSize: '12px', color: '#666' }}>
+                Electrodes 0-8 initialized. Impedance data: {impedanceData.length} measurement{impedanceData.length !== 1 ? 's' : ''}
+              </div>
+              {impedanceData.length > 0 && (
+                <div style={{ marginTop: '8px', maxHeight: '100px', overflowY: 'auto', fontSize: '11px', backgroundColor: '#f5f5f5', padding: '4px', borderRadius: '2px' }}>
+                  {impedanceData.map((data, idx) => (
+                    <div key={idx}>{data}</div>
+                  ))}
+                </div>
+              )}
             </div>
               
             </div>
