@@ -370,7 +370,6 @@ const SensorPanel: React.FC = () => {
   // Recording controls
   const handleStartRecording = () => {
     recordedRef.current = { sensor1: [], sensor2: [] };
-    impedanceMeasurementsRef.current = [];
     setIsRecording(true);
     setIsPausedRecording(false);
     // add a start marker at the current chart time (fallback to 0)
@@ -562,7 +561,7 @@ const SensorPanel: React.FC = () => {
 
   const handleSaveImpedance = () => {
     // Create separate CSV file for impedance measurements only
-    if (!impedanceMeasurementsRef.current || impedanceMeasurementsRef.current.length === 0) {
+    if (!impedanceData || impedanceData.length === 0) {
       window.alert('No impedance measurements to save');
       return;
     }
@@ -581,20 +580,10 @@ const SensorPanel: React.FC = () => {
 
     let csv = 'timestamp_utc,measurement_index,impedance_data\n';
     
-    // Use live impedance data with current timestamp
-    const now = new Date(Date.now() + 60 * 60 * 1000);
-    const year = now.getUTCFullYear();
-    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(now.getUTCDate()).padStart(2, '0');
-    const hours = String(now.getUTCHours()).padStart(2, '0');
-    const minutes = String(now.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(now.getUTCSeconds()).padStart(2, '0');
-    const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
-    const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
-    
+    // Use live impedance data with actual timestamps
     for (let i = 0; i < impedanceData.length; i++) {
-      const impDataStr = escapeCSV(impedanceData[i]);
-      csv += `${timestamp},${i},${impDataStr}\n`;
+      const impDataStr = escapeCSV(impedanceData[i].data);
+      csv += `${impedanceData[i].timestamp},${i},${impDataStr}\n`;
     }
 
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
@@ -798,8 +787,12 @@ const SensorPanel: React.FC = () => {
               </div>
               {impedanceData.length > 0 && (
                 <div style={{ marginTop: '8px', maxHeight: '100px', overflowY: 'auto', fontSize: '11px', backgroundColor: '#f5f5f5', padding: '4px', borderRadius: '2px' }}>
-                  {impedanceData.map((data, idx) => (
-                    <div key={idx}>{data}</div>
+                  {impedanceData.map((item, idx) => (
+                    <div key={idx} style={{ marginBottom: '2px' }}>
+                      <span style={{ color: '#666', fontSize: '10px' }}>{item.timestamp}</span>
+                      {' → '}
+                      <span>{item.data}</span>
+                    </div>
                   ))}
                 </div>
               )}

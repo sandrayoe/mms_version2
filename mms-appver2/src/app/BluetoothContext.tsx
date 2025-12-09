@@ -21,7 +21,7 @@ interface BluetoothContextType {
   lastResponse: string | null;
   initializeImpedance: (electrodes: number[]) => Promise<void>;
   measureImpedance: () => Promise<void>;
-  impedanceData: string[];
+  impedanceData: Array<{timestamp: string; data: string}>;
   clearImpedanceData: () => void;
 }
 
@@ -33,7 +33,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [rxCharacteristic, setRxCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
   const [txCharacteristic, setTxCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
   const [lastResponse, setLastResponse] = useState<string | null>(null);
-  const [impedanceData, setImpedanceData] = useState<string[]>([]);
+  const [impedanceData, setImpedanceData] = useState<Array<{timestamp: string; data: string}>>([]);
 
   const deviceRef = useRef<BluetoothDevice | null>(null);
   const isManualDisconnectRef = useRef(false);
@@ -422,8 +422,19 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           // Check if this is impedance data (numeric values, could be resistance measurements)
           // Impedance values are typically numeric strings, possibly with spaces or commas
           if (/^[\d\s,\.]+$/.test(text)) {
-            setImpedanceData(prev => [...prev, text]);
-            console.log('Impedance data captured:', text);
+            // Create UTC+1 timestamp
+            const now = new Date(Date.now() + 60 * 60 * 1000);
+            const year = now.getUTCFullYear();
+            const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(now.getUTCDate()).padStart(2, '0');
+            const hours = String(now.getUTCHours()).padStart(2, '0');
+            const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+            const seconds = String(now.getUTCSeconds()).padStart(2, '0');
+            const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
+            const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
+            
+            setImpedanceData(prev => [...prev, {timestamp, data: text}]);
+            console.log('Impedance data captured:', text, 'at', timestamp);
           }
         }
       } catch (e) {
