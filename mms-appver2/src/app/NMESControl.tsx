@@ -74,8 +74,6 @@ const SensorPanel: React.FC = () => {
   const [sensorName, setSensorName] = useState<string>("");
   // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
   const paramSnapshotsRef = useRef<Array<{ time: number; params: Record<string, string> }>>([]);
-  // Impedance measurements storage
-  const impedanceMeasurementsRef = useRef<Array<{ time: number; data: string[] }>>([]);
 
   // Helper to append a parameter snapshot (keeps chronological order)
   const pushParamSnapshot = (time: number, params: Record<string,string>) => {
@@ -434,21 +432,6 @@ const SensorPanel: React.FC = () => {
 
   const handleMeasureImpedance = async () => {
     await measureImpedance();
-    
-    // Record impedance measurement with timestamp if recording
-    if (isRecording && !isPausedRecording) {
-      const latestTime = sensor1Data.length ? sensor1Data[sensor1Data.length - 1].time : 0;
-      // Wait a moment for data to arrive, then capture
-      setTimeout(() => {
-        if (impedanceData.length > 0) {
-          impedanceMeasurementsRef.current.push({
-            time: latestTime,
-            data: [...impedanceData]
-          });
-          console.log(`Impedance measurement recorded at t=${latestTime}s`);
-        }
-      }, 2000); // Wait 2 seconds for impedance data to arrive
-    }
   };
 
   const handleSaveRecording = () => {
@@ -596,21 +579,22 @@ const SensorPanel: React.FC = () => {
       return s;
     };
 
-    let csv = 'timestamp_utc,relative_time_s,impedance_data\n';
+    let csv = 'timestamp_utc,measurement_index,impedance_data\n';
     
-    for (const imp of impedanceMeasurementsRef.current) {
-      const impTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (imp.time * 1000);
-      const impUTCPlus1 = new Date(impTimestamp + 60 * 60 * 1000);
-      const year = impUTCPlus1.getUTCFullYear();
-      const month = String(impUTCPlus1.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(impUTCPlus1.getUTCDate()).padStart(2, '0');
-      const hours = String(impUTCPlus1.getUTCHours()).padStart(2, '0');
-      const minutes = String(impUTCPlus1.getUTCMinutes()).padStart(2, '0');
-      const seconds = String(impUTCPlus1.getUTCSeconds()).padStart(2, '0');
-      const milliseconds = String(impUTCPlus1.getUTCMilliseconds()).padStart(3, '0');
-      const impUTC = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
-      const impDataStr = escapeCSV(imp.data.join('; '));
-      csv += `${impUTC},${imp.time},${impDataStr}\n`;
+    // Use live impedance data with current timestamp
+    const now = new Date(Date.now() + 60 * 60 * 1000);
+    const year = now.getUTCFullYear();
+    const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(now.getUTCDate()).padStart(2, '0');
+    const hours = String(now.getUTCHours()).padStart(2, '0');
+    const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(now.getUTCSeconds()).padStart(2, '0');
+    const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
+    const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
+    
+    for (let i = 0; i < impedanceData.length; i++) {
+      const impDataStr = escapeCSV(impedanceData[i]);
+      csv += `${timestamp},${i},${impDataStr}\n`;
     }
 
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
@@ -645,7 +629,7 @@ const SensorPanel: React.FC = () => {
 
   // Save validation state (computed each render)
   const hasRecordedData = (recordedRef.current.sensor1.length > 0) || (recordedRef.current.sensor2.length > 0);
-  const hasImpedanceData = impedanceMeasurementsRef.current && impedanceMeasurementsRef.current.length > 0;
+  const hasImpedanceData = impedanceData.length > 0;
   const saveMissingReasons: string[] = [];
   if (!hasRecordedData) saveMissingReasons.push('No recorded sensor data');
   if (!patientName || !patientName.trim()) saveMissingReasons.push('Patient Name is required');
