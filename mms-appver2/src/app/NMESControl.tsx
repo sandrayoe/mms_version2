@@ -67,7 +67,7 @@ const SensorPanel: React.FC = () => {
   const [offTime, setOffTime] = useState<string>("");
   // Electrode selection for stimulation
   const [electrode1, setElectrode1] = useState<string>("1");
-  const [electrode2, setElectrode2] = useState<string>("2");
+  const [electrode2, setElectrode2] = useState<string>("9");
   const [amplitude, setAmplitude] = useState<string>("5");
   const [isStimulating, setIsStimulating] = useState<boolean>(false);
   const [isContinuousMeasuring, setIsContinuousMeasuring] = useState<boolean>(false);
@@ -487,20 +487,24 @@ const SensorPanel: React.FC = () => {
       await stimulate(e1 - 1, e2 - 1, amp, true);
       
       // Wait a brief moment for stimulation pulse
-      console.log('[Continuous] Waiting 200ms for stimulation pulse...');
-      await new Promise(resolve => setTimeout(resolve, 200));
+      console.log('[Continuous] Waiting 100ms for stimulation pulse...');
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Step 4: Send E stop command
       console.log('[Continuous] Step 4: Sending E stop');
       await stimulate(e1 - 1, e2 - 1, amp, false);
 
+      // Wait before sending second measurement
+      console.log('[Continuous] Waiting 100ms after E stop...');
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // Step 5: Send g command (second measurement after stimulation)
       console.log('[Continuous] Step 5: Sending second g command');
       await measureImpedance();
       
-      // Step 6: Wait 4 seconds for all measurement data to be received
-      console.log('[Continuous] Waiting 4 seconds for second measurement data...');
-      await new Promise(resolve => setTimeout(resolve, 4000));
+      // Step 6: Wait 3 seconds for all measurement data to be received
+      console.log('[Continuous] Waiting 3 seconds for second measurement data...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
       console.log('[Continuous] Second measurement wait complete');
 
       setIsContinuousMeasuring(false);
