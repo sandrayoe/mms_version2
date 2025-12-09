@@ -102,9 +102,16 @@ const SensorPanel: React.FC = () => {
           return;
         }
         await sendCommand('f' + String(freqNum).padStart(2, '0'));
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for response
       }
-      if (rampUp) await sendCommand('r' + rampUp);
-      if (rampDown) await sendCommand('R' + rampDown);
+      if (rampUp) {
+        await sendCommand('r' + rampUp);
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for response
+      }
+      if (rampDown) {
+        await sendCommand('R' + rampDown);
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for response
+      }
       // OFF-TIME command: 'O' + 1 byte value in deciseconds (e.g., 'O20' for 2.0 seconds)
       if (offTime) {
         const offTimeNum = parseInt(offTime);
@@ -113,8 +120,10 @@ const SensorPanel: React.FC = () => {
           return;
         }
         await sendCommand('O' + offTimeNum);
+        await new Promise(resolve => setTimeout(resolve, 100)); // Wait for response
       }
       await sendCommand('s');
+      await new Promise(resolve => setTimeout(resolve, 100)); // Wait for s-ok response
     } catch (err) {
       console.error('Failed to send parameters:', err);
       window.alert('Failed to send parameters to device');
@@ -476,19 +485,23 @@ const SensorPanel: React.FC = () => {
       // Step 3: Send E command to start stimulation
       console.log('[Continuous] Step 3: Sending E start');
       await stimulate(e1 - 1, e2 - 1, amp, true);
+      
+      // Wait a brief moment for stimulation pulse
+      console.log('[Continuous] Waiting 200ms for stimulation pulse...');
+      await new Promise(resolve => setTimeout(resolve, 200));
 
-      // Step 4: Send g command (second measurement) immediately
-      console.log('[Continuous] Step 4: Sending second g command');
+      // Step 4: Send E stop command
+      console.log('[Continuous] Step 4: Sending E stop');
+      await stimulate(e1 - 1, e2 - 1, amp, false);
+
+      // Step 5: Send g command (second measurement after stimulation)
+      console.log('[Continuous] Step 5: Sending second g command');
       await measureImpedance();
       
-      // Step 5: Wait 3 seconds for all measurement data
-      console.log('[Continuous] Waiting 3 seconds for second measurement data...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Step 6: Wait 4 seconds for all measurement data to be received
+      console.log('[Continuous] Waiting 4 seconds for second measurement data...');
+      await new Promise(resolve => setTimeout(resolve, 4000));
       console.log('[Continuous] Second measurement wait complete');
-      
-      // Step 6: Send E stop after measurement is done
-      console.log('[Continuous] Step 5: Sending E stop');
-      await stimulate(e1 - 1, e2 - 1, amp, false);
 
       setIsContinuousMeasuring(false);
     } catch (err) {

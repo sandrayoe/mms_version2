@@ -438,6 +438,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           }
         }
       } catch (e) {
+        console.error('Error decoding response:', e);
         // ignore decode errors
       }
     } else {
