@@ -13,8 +13,6 @@ const SensorPanel: React.FC = () => {
   const [sensor2Data, setSensor2Data] = useState<{ time: number; sensorValue: number }[]>([]);
   // Number of samples to keep in the displayed chart window (most recent samples)
   const CHART_WINDOW_SIZE = 200;
-  // Fixed Y axis maximum for better visual comparison and less jittering
-  const CHART_Y_MAX = 250;
 
   // Bin width in milliseconds for simple time-binning/averaging of incoming samples.
   // Set to 0 to disable binning and keep raw samples. Typical useful values: 5-20 ms.
@@ -59,16 +57,11 @@ const SensorPanel: React.FC = () => {
   const [isPausedRecording, setIsPausedRecording] = useState(false);
   const isPausedRecordingRef = useRef<boolean>(isPausedRecording);
   const recordedRef = useRef<{ sensor1: { time: number; sensorValue: number }[]; sensor2: { time: number; sensorValue: number }[] }>({ sensor1: [], sensor2: [] });
-  // Aggregated (chart) rows stored alongside raw recordings so CSV can reproduce chart
-  // Each aggregated row may be flagged as a spike (display suppressed) via `spike`.
-  const recordedAggRef = useRef<{ sensor1: { time: number; sensorValue: number; count: number; min: number; max: number; spike?: boolean }[]; sensor2: { time: number; sensorValue: number; count: number; min: number; max: number; spike?: boolean }[] }>({ sensor1: [], sensor2: [] });
-  const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   type Marker = { time: number; type: "start" | "stop" | "pause" | "resume" };
   const [markers, setMarkers] = useState<Marker[]>([]);
 
   // User inputs for file naming and parameters
   const [frequency, setFrequency] = useState<string>("");
-  const [intensity, setIntensity] = useState<string>("");
   const [rampUp, setRampUp] = useState<string>("");
   const [rampDown, setRampDown] = useState<string>("");
   // Electrode selection for stimulation
@@ -76,12 +69,9 @@ const SensorPanel: React.FC = () => {
   const [electrode2, setElectrode2] = useState<string>("2");
   const [amplitude, setAmplitude] = useState<string>("5");
   const [isStimulating, setIsStimulating] = useState<boolean>(false);
-  const [modifyMode, setModifyMode] = useState<boolean>(false);
   // New inputs for saving metadata
   const [patientName, setPatientName] = useState<string>("");
   const [sensorName, setSensorName] = useState<string>("");
-  // whether the user has submitted input parameters (required fields) before recording
-  const [paramsSubmitted, setParamsSubmitted] = useState<boolean>(false);
   // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
   const paramSnapshotsRef = useRef<Array<{ time: number; params: Record<string, string> }>>([]);
 
@@ -130,8 +120,6 @@ const SensorPanel: React.FC = () => {
         electrode1: electrode1 || 'N/A',
         electrode2: electrode2 || 'N/A',
       });
-      // mark submitted since user explicitly applied/submitted parameters
-      setParamsSubmitted(true);
       window.alert('Input parameters sent. s-ok expected from device.');
       return;
     }
@@ -167,21 +155,9 @@ const SensorPanel: React.FC = () => {
       electrode1: electrode1 || 'N/A',
       electrode2: electrode2 || 'N/A',
     });
-    setParamsSubmitted(true);
   };
   // diagnostics removed from UI; use BIN_MS to control displayed smoothing
-  // Diagnostics for timing and sample indexing
   const lastTickWallClockRef = useRef<number | null>(null);
-  const lastSampleIndexRef = useRef<number>(0);
-  const [diag, setDiag] = useState<{
-    prevIndex: number;
-    newIndex: number;
-    appended: number;
-    expectedMs: number;
-    actualMs: number;
-    errorMs: number;
-    effectiveHz: number;
-  } | null>(null);
   // Keep a ref to the latest imuData provided by context, so we can poll it at a steady interval
   const imuDataRefLocal = useRef(imuData);
   useEffect(() => {
@@ -227,8 +203,6 @@ const SensorPanel: React.FC = () => {
       // fall back to sampleIndex timebase.
       let appendedPerTimeStep = 0;
       let appendedTotal = 0;
-      let earliestTs: number | null = null;
-      let latestTs: number | null = null;
 
 
       // Helper to push charts using provider ts. Also compute min/max ts across the batch
@@ -306,19 +280,12 @@ const SensorPanel: React.FC = () => {
         if (isRecording && !isPausedRecordingRef.current && toAppend1Raw.length) {
           recordedRef.current.sensor1.push(...toAppend1Raw.map(p => ({ time: p.time, sensorValue: p.sensorValue })));
         }
-        // Also save aggregated rows (original values) so CSV reproduces chart if desired
-        if (isRecording && !isPausedRecordingRef.current) {
-          recordedAggRef.current.sensor1.push(...toAppend1.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max })));
-        }
       }
       if (toAppend2.length) {
         const display2 = toAppend2.map(p => ({ time: p.time, sensorValue: p.sensorValue }));
         queuedS2Ref.current.push(...display2);
         if (isRecording && !isPausedRecordingRef.current && toAppend2Raw.length) {
           recordedRef.current.sensor2.push(...toAppend2Raw.map(p => ({ time: p.time, sensorValue: p.sensorValue })));
-        }
-        if (isRecording && !isPausedRecordingRef.current) {
-          recordedAggRef.current.sensor2.push(...toAppend2.map(p => ({ time: p.time, sensorValue: p.sensorValue, count: p.count, min: p.min, max: p.max })));
         }
       }
 
@@ -351,24 +318,6 @@ const SensorPanel: React.FC = () => {
       // If we used provider timestamps, advance sampleIndex conservatively by appendedPerTimeStep
       sampleIndexRef.current += appendedPerTimeStep;
 
-      setLastUpdate(Date.now());
-
-      const newIndex = sampleIndexRef.current;
-      // expected elapsed ms for appended time-steps (we can use provider timestamps if available)
-      // Compute expectedMs from provider timestamps when available
-      let expectedMs = appendedPerTimeStep * sampleIntervalMs;
-      if (minTs !== null && maxTs !== null) {
-        expectedMs = maxTs - minTs;
-      }
-      const lastTick = lastTickWallClockRef.current ?? tickNow;
-      const actualMs = Math.max(0, tickNow - lastTick);
-      const errorMs = actualMs - expectedMs;
-      // effectiveHz: prefer provider time range when available
-      const effectiveHz = expectedMs > 0 ? (appendedPerTimeStep / (expectedMs / 1000)) : (actualMs > 0 ? (appendedPerTimeStep / (actualMs / 1000)) : 0);
-
-      // set diagnostic state
-      setDiag({ prevIndex, newIndex, appended: appendedTotal, expectedMs, actualMs, errorMs, effectiveHz });
-
       // diagnostics logging removed from UI; binning is applied above
 
       lastTickWallClockRef.current = tickNow;
@@ -389,8 +338,7 @@ const SensorPanel: React.FC = () => {
       setIsRecording(false);
       setSensor1Data([]);
       setSensor2Data([]);
-  recordedRef.current = { sensor1: [], sensor2: [] };
-  recordedAggRef.current = { sensor1: [], sensor2: [] };
+      recordedRef.current = { sensor1: [], sensor2: [] };
       prevImuLenRef.current = { s1: 0, s2: 0 };
       sampleIndexRef.current = 0;
     }
@@ -423,8 +371,7 @@ const SensorPanel: React.FC = () => {
 
   // Recording controls
   const handleStartRecording = () => {
-  recordedRef.current = { sensor1: [], sensor2: [] };
-  recordedAggRef.current = { sensor1: [], sensor2: [] };
+    recordedRef.current = { sensor1: [], sensor2: [] };
     setIsRecording(true);
     setIsPausedRecording(false);
     // add a start marker at the current chart time (fallback to 0)
