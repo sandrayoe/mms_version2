@@ -455,7 +455,7 @@ const SensorPanel: React.FC = () => {
 
       // Step 2: Send g command (first measurement) and wait for data
       await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for data to be received
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for data to be received
 
       // Step 3: Send E command to start stimulation
       await stimulate(e1 - 1, e2 - 1, amp, true);
@@ -467,11 +467,11 @@ const SensorPanel: React.FC = () => {
 
       // Step 5: Send g command (second measurement) and wait for data
       await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for data to be received
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for data to be received
 
       // Step 6: Send g command (third measurement) and wait for data
       await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for data to be received
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for data to be received
 
       setIsContinuousMeasuring(false);
     } catch (err) {
