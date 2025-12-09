@@ -451,11 +451,11 @@ const SensorPanel: React.FC = () => {
       // Step 1: Send G command (initialize impedance)
       const electrodes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
       await initializeImpedance(electrodes);
-      await new Promise(resolve => setTimeout(resolve, 200)); // Wait for initialization
+      await new Promise(resolve => setTimeout(resolve, 300)); // Wait for initialization
 
       // Step 2: Send g command (first measurement) and wait for data
       await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for data to be received
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer for data to be received
 
       // Step 3: Send E command to start stimulation
       await stimulate(e1 - 1, e2 - 1, amp, true);
@@ -463,15 +463,15 @@ const SensorPanel: React.FC = () => {
 
       // Step 4: Send E command to stop stimulation
       await stimulate(e1 - 1, e2 - 1, amp, false);
-      await new Promise(resolve => setTimeout(resolve, 50)); // Short wait after stopping
+      await new Promise(resolve => setTimeout(resolve, 100)); // Wait after stopping
 
       // Step 5: Send g command (second measurement) and wait for data
       await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for data to be received
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer for data to be received
 
       // Step 6: Send g command (third measurement) and wait for data
       await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for data to be received
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer for data to be received
 
       setIsContinuousMeasuring(false);
     } catch (err) {
