@@ -97,10 +97,6 @@ const SensorPanel: React.FC = () => {
     arr.push({ time, params });
   };
 
-  // Visual cue for last applied snapshot
-  const [lastAppliedTime, setLastAppliedTime] = useState<number | null>(null);
-  const [showApplied, setShowApplied] = useState(false);
-
   // Manual snapshot application: user presses "Modify" to record parameter changes into snapshots
   const handleApplyModify = async () => {
     // Send commands to device
@@ -136,9 +132,6 @@ const SensorPanel: React.FC = () => {
       });
       // mark submitted since user explicitly applied/submitted parameters
       setParamsSubmitted(true);
-      setLastAppliedTime(t);
-      setShowApplied(true);
-      setTimeout(() => setShowApplied(false), 1500);
       window.alert('Input parameters sent. s-ok expected from device.');
       return;
     }
@@ -175,9 +168,6 @@ const SensorPanel: React.FC = () => {
       electrode2: electrode2 || 'N/A',
     });
     setParamsSubmitted(true);
-    setLastAppliedTime(latestTime);
-    setShowApplied(true);
-    setTimeout(() => setShowApplied(false), 1500);
   };
   // diagnostics removed from UI; use BIN_MS to control displayed smoothing
   // Diagnostics for timing and sample indexing
@@ -669,11 +659,6 @@ const SensorPanel: React.FC = () => {
                       <button className={`${styles.button} ${styles.compactButton}`} onClick={handleApplyModify} disabled={!isConnected}>
                         Input Parameters
                       </button>
-                      <div aria-live="polite">
-                        {showApplied && lastAppliedTime !== null && (
-                          <span className={styles.applyBadge}>Applied @ {lastAppliedTime.toFixed(2)}s</span>
-                        )}
-                      </div>
                       {lastResponse && (
                         <div style={{ fontSize: '12px', color: lastResponse.includes('ok') ? '#00b050' : '#666', marginTop: '4px' }}>
                           Device: {lastResponse}
