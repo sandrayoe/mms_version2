@@ -532,27 +532,6 @@ const SensorPanel: React.FC = () => {
   csv += `${absoluteTimestamp},${v1},${v2},${paramVals.join(',')},${metaVals.join(',')},${t}\n`;
     }
 
-    // Append impedance measurements section
-    if (impedanceMeasurementsRef.current && impedanceMeasurementsRef.current.length > 0) {
-      csv += '\n--- Impedance Measurements ---\n';
-      csv += 'timestamp_utc,relative_time_s,impedance_data\n';
-      for (const imp of impedanceMeasurementsRef.current) {
-        const impTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (imp.time * 1000);
-        const impUTCPlus1 = new Date(impTimestamp + 60 * 60 * 1000);
-        const year = impUTCPlus1.getUTCFullYear();
-        const month = String(impUTCPlus1.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(impUTCPlus1.getUTCDate()).padStart(2, '0');
-        const hours = String(impUTCPlus1.getUTCHours()).padStart(2, '0');
-        const minutes = String(impUTCPlus1.getUTCMinutes()).padStart(2, '0');
-        const seconds = String(impUTCPlus1.getUTCSeconds()).padStart(2, '0');
-        const milliseconds = String(impUTCPlus1.getUTCMilliseconds()).padStart(3, '0');
-        const impUTC = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
-        // Join impedance data with semicolons to keep it in one cell
-        const impDataStr = escapeCSV(imp.data.join('; '));
-        csv += `${impUTC},${imp.time},${impDataStr}\n`;
-      }
-    }
-
     // Append markers section so time markers are preserved in the recording file
     if (markers && markers.length) {
       for (const m of markers) {
@@ -598,16 +577,84 @@ const SensorPanel: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleSaveImpedance = () => {
+    // Create separate CSV file for impedance measurements only
+    if (!impedanceMeasurementsRef.current || impedanceMeasurementsRef.current.length === 0) {
+      window.alert('No impedance measurements to save');
+      return;
+    }
+
+    const escapeCSV = (v: string) => {
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      if (s.includes('"')) {
+        return '"' + s.replace(/"/g, '""') + '"';
+      }
+      if (s.includes(',') || s.includes('\n') || s.includes('\r')) {
+        return '"' + s + '"';
+      }
+      return s;
+    };
+
+    let csv = 'timestamp_utc,relative_time_s,impedance_data\n';
+    
+    for (const imp of impedanceMeasurementsRef.current) {
+      const impTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (imp.time * 1000);
+      const impUTCPlus1 = new Date(impTimestamp + 60 * 60 * 1000);
+      const year = impUTCPlus1.getUTCFullYear();
+      const month = String(impUTCPlus1.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(impUTCPlus1.getUTCDate()).padStart(2, '0');
+      const hours = String(impUTCPlus1.getUTCHours()).padStart(2, '0');
+      const minutes = String(impUTCPlus1.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(impUTCPlus1.getUTCSeconds()).padStart(2, '0');
+      const milliseconds = String(impUTCPlus1.getUTCMilliseconds()).padStart(3, '0');
+      const impUTC = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
+      const impDataStr = escapeCSV(imp.data.join('; '));
+      csv += `${impUTC},${imp.time},${impDataStr}\n`;
+    }
+
+    const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
+    const patientPart = patientName ? sanitize(patientName) : 'patientNA';
+    const sensorPart = sensorName ? sanitize(sensorName) : 'sensorNA';
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    
+    const fileDate = new Date(Date.now() + 60 * 60 * 1000);
+    const year = fileDate.getUTCFullYear();
+    const month = String(fileDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(fileDate.getUTCDate()).padStart(2, '0');
+    const hours = String(fileDate.getUTCHours()).padStart(2, '0');
+    const minutes = String(fileDate.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(fileDate.getUTCSeconds()).padStart(2, '0');
+    const milliseconds = String(fileDate.getUTCMilliseconds()).padStart(3, '0');
+    const utcPlus1Timestamp = `${year}-${month}-${day}T${hours}-${minutes}-${seconds}-${milliseconds}+01-00`;
+    
+    a.download = `mms_impedance_${patientPart}_${sensorPart}_${utcPlus1Timestamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   // Download spike/burst event log exposed by BluetoothContext
   // Spike log export/clear handlers removed per request; spike events remain
   // accessible programmatically via getSpikeEvents() / clearSpikeEvents() if needed.
 
   // Save validation state (computed each render)
   const hasRecordedData = (recordedRef.current.sensor1.length > 0) || (recordedRef.current.sensor2.length > 0);
+  const hasImpedanceData = impedanceMeasurementsRef.current && impedanceMeasurementsRef.current.length > 0;
   const saveMissingReasons: string[] = [];
   if (!hasRecordedData) saveMissingReasons.push('No recorded sensor data');
   if (!patientName || !patientName.trim()) saveMissingReasons.push('Patient Name is required');
   if (!sensorName || !sensorName.trim()) saveMissingReasons.push('Sensor Name is required');
+
+  const impedanceSaveMissingReasons: string[] = [];
+  if (!hasImpedanceData) impedanceSaveMissingReasons.push('No impedance measurements');
+  if (!patientName || !patientName.trim()) impedanceSaveMissingReasons.push('Patient Name is required');
+  if (!sensorName || !sensorName.trim()) impedanceSaveMissingReasons.push('Sensor Name is required');
 
   return (
     <div className={styles.container}>
@@ -808,7 +855,29 @@ const SensorPanel: React.FC = () => {
                 !sensorName.trim()
               }
             >
-              Save Recording
+              Save Sensor Recording
+            </button>
+            <div style={{ height: 8 }} />
+            {/* Impedance save validation */}
+            {impedanceSaveMissingReasons.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {impedanceSaveMissingReasons.map((m, i) => (
+                  <div key={i} className={styles.saveError}>{m}</div>
+                ))}
+              </div>
+            )}
+            <button
+              className={styles.button}
+              onClick={() => {
+                handleSaveImpedance();
+              }}
+              disabled={
+                !hasImpedanceData ||
+                !patientName.trim() ||
+                !sensorName.trim()
+              }
+            >
+              Save Impedance Data
             </button>
             <div style={{ height: 8 }} />
             {/* Spike log download/clear buttons removed per request */}
