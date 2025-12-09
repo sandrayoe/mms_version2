@@ -783,7 +783,7 @@ const SensorPanel: React.FC = () => {
                 </div>
               )}
               <div style={{ fontSize: '12px', color: '#666' }}>
-                Electrodes 0-8 initialized. Impedance data: {impedanceData.length} measurement{impedanceData.length !== 1 ? 's' : ''}
+                Electrodes 1-9 initialized. Impedance data: {impedanceData.length} measurement{impedanceData.length !== 1 ? 's' : ''}
               </div>
               {impedanceData.length > 0 && (
                 <div style={{ marginTop: '8px', maxHeight: '100px', overflowY: 'auto', fontSize: '11px', backgroundColor: '#f5f5f5', padding: '4px', borderRadius: '2px' }}>
