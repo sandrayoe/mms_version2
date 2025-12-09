@@ -64,6 +64,7 @@ const SensorPanel: React.FC = () => {
   const [frequency, setFrequency] = useState<string>("");
   const [rampUp, setRampUp] = useState<string>("");
   const [rampDown, setRampDown] = useState<string>("");
+  const [offTime, setOffTime] = useState<string>("");
   // Electrode selection for stimulation
   const [electrode1, setElectrode1] = useState<string>("1");
   const [electrode2, setElectrode2] = useState<string>("2");
@@ -104,6 +105,15 @@ const SensorPanel: React.FC = () => {
       }
       if (rampUp) await sendCommand('r' + rampUp);
       if (rampDown) await sendCommand('R' + rampDown);
+      // OFF-TIME command: 'O' + 1 byte value in deciseconds (e.g., 'O20' for 2.0 seconds)
+      if (offTime) {
+        const offTimeNum = parseInt(offTime);
+        if (isNaN(offTimeNum) || offTimeNum < 0 || offTimeNum > 255) {
+          window.alert('OFF-TIME must be between 0 and 255 deciseconds (0-25.5 seconds)');
+          return;
+        }
+        await sendCommand('O' + offTimeNum);
+      }
       await sendCommand('s');
     } catch (err) {
       console.error('Failed to send parameters:', err);
@@ -118,6 +128,7 @@ const SensorPanel: React.FC = () => {
         frequency: frequency || 'N/A',
         rampUp: rampUp || 'N/A',
         rampDown: rampDown || 'N/A',
+        offTime: offTime || 'N/A',
         electrode1: electrode1 || 'N/A',
         electrode2: electrode2 || 'N/A',
       });
@@ -152,6 +163,7 @@ const SensorPanel: React.FC = () => {
       frequency: frequency || 'N/A',
       rampUp: rampUp || 'N/A',
       rampDown: rampDown || 'N/A',
+      offTime: offTime || 'N/A',
       electrode1: electrode1 || 'N/A',
       electrode2: electrode2 || 'N/A',
     });
@@ -450,28 +462,33 @@ const SensorPanel: React.FC = () => {
     try {
       // Step 1: Send G command (initialize impedance)
       const electrodes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+      console.log('[Continuous] Step 1: Sending G command');
       await initializeImpedance(electrodes);
       await new Promise(resolve => setTimeout(resolve, 300)); // Wait for initialization
 
       // Step 2: Send g command (first measurement) and wait for data
+      console.log('[Continuous] Step 2: Sending first g command');
       await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer for data to be received
+      console.log('[Continuous] Waiting 3 seconds for first measurement data...');
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for all data to be received
+      console.log('[Continuous] First measurement wait complete');
 
       // Step 3: Send E command to start stimulation
+      console.log('[Continuous] Step 3: Sending E start');
       await stimulate(e1 - 1, e2 - 1, amp, true);
-      await new Promise(resolve => setTimeout(resolve, 100));
 
-      // Step 4: Send E command to stop stimulation
+      // Step 4: Send g command (second measurement) immediately
+      console.log('[Continuous] Step 4: Sending second g command');
+      await measureImpedance();
+      
+      // Step 5: Wait 3 seconds for all measurement data
+      console.log('[Continuous] Waiting 3 seconds for second measurement data...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log('[Continuous] Second measurement wait complete');
+      
+      // Step 6: Send E stop after measurement is done
+      console.log('[Continuous] Step 5: Sending E stop');
       await stimulate(e1 - 1, e2 - 1, amp, false);
-      await new Promise(resolve => setTimeout(resolve, 100)); // Wait after stopping
-
-      // Step 5: Send g command (second measurement) and wait for data
-      await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer for data to be received
-
-      // Step 6: Send g command (third measurement) and wait for data
-      await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Wait longer for data to be received
 
       setIsContinuousMeasuring(false);
     } catch (err) {
@@ -705,7 +722,7 @@ const SensorPanel: React.FC = () => {
           <div className={styles.controlBox}>
             <h3>Sensor Control</h3>
             <div className={styles.inputsBlock}>
-              {/* Row 1: Frequency, Ramp-Up, Ramp-Down */}
+              {/* Row 1: Frequency, Ramp-Up, Ramp-Down, OFF-TIME */}
                 <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '8px' }}>
                   <label className={styles.inputLabel}>
                     <span className={styles.labelRow}>Frequency (Hz):</span>
@@ -720,6 +737,11 @@ const SensorPanel: React.FC = () => {
                   <label className={styles.inputLabel}>
                     <span className={styles.labelRow}>Ramp-Down (ds):</span>
                     <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" value={rampDown} onChange={(e) => { setRampDown(e.target.value);}} />
+                  </label>
+
+                  <label className={styles.inputLabel}>
+                    <span className={styles.labelRow}>OFF-TIME (ds):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" max="255" value={offTime} onChange={(e) => { setOffTime(e.target.value);}} />
                   </label>
                 </div>
 
