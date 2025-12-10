@@ -520,7 +520,7 @@ const SensorPanel: React.FC = () => {
       
       // Step 5: Wait 3 seconds for all measurement data to be received
       console.log('[Continuous] Waiting 3 seconds for second measurement data...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
       console.log('[Continuous] Second measurement wait complete');
 
       // Step 6: Send N command
@@ -696,15 +696,32 @@ const SensorPanel: React.FC = () => {
       return s;
     };
 
-    let csv = 'timestamp_utc,measurement_index,impedance_data,e_start_timestamp,second_g_timestamp\n';
+    // Generate electrode pairs (1-2, 1-3, ..., 1-9, 2-1, 2-3, ..., 9-8)
+    // Exclude same pairs like 1-1, 2-2, etc.
+    const electrodePairs: Array<{e1: number, e2: number}> = [];
+    for (let i = 1; i <= 9; i++) {
+      for (let j = 1; j <= 9; j++) {
+        if (i !== j) {
+          electrodePairs.push({e1: i, e2: j});
+        }
+      }
+    }
+
+    let csv = 'timestamp_utc,measurement_index,electrode_1,electrode_2,impedance_data\n';
     
     // Use live impedance data with actual timestamps
     for (let i = 0; i < impedanceData.length; i++) {
       const impDataStr = escapeCSV(impedanceData[i].data);
-      const eStartTime = stimulationStartTimestamp || 'N/A';
-      const gTimestamp = secondGTimestamp || 'N/A';
-      csv += `${impedanceData[i].timestamp},${i},${impDataStr},${eStartTime},${gTimestamp}\n`;
+      // Assign electrode pair based on measurement index (cycles through the pairs)
+      const pair = electrodePairs[i % electrodePairs.length];
+      csv += `${impedanceData[i].timestamp},${i},${pair.e1},${pair.e2},${impDataStr}\n`;
     }
+    
+    // Add timestamps below the data
+    csv += `\n`;
+    csv += `E Start Timestamp,${stimulationStartTimestamp || 'N/A'}\n`;
+    csv += `Second G Timestamp,${secondGTimestamp || 'N/A'}\n`;
+
 
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
     const patientPart = patientName ? sanitize(patientName) : 'patientNA';
