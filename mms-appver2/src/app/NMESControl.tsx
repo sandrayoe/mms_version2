@@ -72,6 +72,8 @@ const SensorPanel: React.FC = () => {
   const [isStimulating, setIsStimulating] = useState<boolean>(false);
   const [isContinuousMeasuring, setIsContinuousMeasuring] = useState<boolean>(false);
   const continuousMeasurementTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [stimulationStartTimestamp, setStimulationStartTimestamp] = useState<string>("");
+  const [secondGTimestamp, setSecondGTimestamp] = useState<string>("");
   // New inputs for saving metadata
   const [patientName, setPatientName] = useState<string>("");
   const [sensorName, setSensorName] = useState<string>("");
@@ -112,14 +114,14 @@ const SensorPanel: React.FC = () => {
         await sendCommand('R' + rampDown);
         await new Promise(resolve => setTimeout(resolve, 100)); // Wait for response
       }
-      // OFF-TIME command: 'O' + 1 byte value in deciseconds (e.g., 'O20' for 2.0 seconds)
+      // OFF-TIME command: 'O' + 2 ASCII digits in deciseconds (e.g., 'O10' for 1.0 seconds)
       if (offTime) {
         const offTimeNum = parseInt(offTime);
-        if (isNaN(offTimeNum) || offTimeNum < 0 || offTimeNum > 255) {
-          window.alert('OFF-TIME must be between 0 and 255 deciseconds (0-25.5 seconds)');
+        if (isNaN(offTimeNum) || offTimeNum < 0 || offTimeNum > 99) {
+          window.alert('OFF-TIME must be between 0 and 99 deciseconds (0-9.9 seconds)');
           return;
         }
-        await sendCommand('O' + offTimeNum);
+        await sendCommand('O' + String(offTimeNum).padStart(2, '0'));
         await new Promise(resolve => setTimeout(resolve, 100)); // Wait for response
       }
       await sendCommand('s');
@@ -484,28 +486,54 @@ const SensorPanel: React.FC = () => {
 
       // Step 3: Send E command to start stimulation
       console.log('[Continuous] Step 3: Sending E start');
-      await stimulate(e1 - 1, e2 - 1, amp, true);
+      // Capture timestamp when E start is sent
+      const eStartNow = new Date(Date.now() + 60 * 60 * 1000);
+      const eStartYear = eStartNow.getUTCFullYear();
+      const eStartMonth = String(eStartNow.getUTCMonth() + 1).padStart(2, '0');
+      const eStartDay = String(eStartNow.getUTCDate()).padStart(2, '0');
+      const eStartHours = String(eStartNow.getUTCHours()).padStart(2, '0');
+      const eStartMinutes = String(eStartNow.getUTCMinutes()).padStart(2, '0');
+      const eStartSeconds = String(eStartNow.getUTCSeconds()).padStart(2, '0');
+      const eStartMilliseconds = String(eStartNow.getUTCMilliseconds()).padStart(3, '0');
+      const eStartTimestamp = `${eStartYear}-${eStartMonth}-${eStartDay}T${eStartHours}:${eStartMinutes}:${eStartSeconds}.${eStartMilliseconds}+01:00`;
+      setStimulationStartTimestamp(eStartTimestamp);
+      console.log('[Continuous] E start timestamp:', eStartTimestamp);
       
-      // Wait a brief moment for stimulation pulse
-      console.log('[Continuous] Waiting 100ms for stimulation pulse...');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await stimulate(e1 - 1, e2 - 1, amp, true);
 
-      // Step 4: Send E stop command
-      console.log('[Continuous] Step 4: Sending E stop');
-      await stimulate(e1 - 1, e2 - 1, amp, false);
-
-      // Wait before sending second measurement
-      console.log('[Continuous] Waiting 100ms after E stop...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Step 5: Send g command (second measurement after stimulation)
-      console.log('[Continuous] Step 5: Sending second g command');
+      // Step 4: Send g command (second measurement during stimulation)
+      console.log('[Continuous] Step 4: Sending second g command');
+      // Capture timestamp when second g is sent
+      const now = new Date(Date.now() + 60 * 60 * 1000);
+      const year = now.getUTCFullYear();
+      const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(now.getUTCDate()).padStart(2, '0');
+      const hours = String(now.getUTCHours()).padStart(2, '0');
+      const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(now.getUTCSeconds()).padStart(2, '0');
+      const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
+      const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
+      setSecondGTimestamp(timestamp);
+      console.log('[Continuous] Second g timestamp:', timestamp);
+      
       await measureImpedance();
       
-      // Step 6: Wait 3 seconds for all measurement data to be received
+      // Step 5: Wait 3 seconds for all measurement data to be received
       console.log('[Continuous] Waiting 3 seconds for second measurement data...');
       await new Promise(resolve => setTimeout(resolve, 3000));
       console.log('[Continuous] Second measurement wait complete');
+
+      // Step 6: Send N command
+      console.log('[Continuous] Step 6: Sending N command');
+      await sendCommand('N');
+
+      // Wait before stopping stimulation
+      console.log('[Continuous] Waiting 3 seconds before E stop...');
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Step 7: Send E stop command
+      console.log('[Continuous] Step 7: Sending E stop');
+      await stimulate(e1 - 1, e2 - 1, amp, false);
 
       setIsContinuousMeasuring(false);
     } catch (err) {
@@ -668,12 +696,14 @@ const SensorPanel: React.FC = () => {
       return s;
     };
 
-    let csv = 'timestamp_utc,measurement_index,impedance_data\n';
+    let csv = 'timestamp_utc,measurement_index,impedance_data,e_start_timestamp,second_g_timestamp\n';
     
     // Use live impedance data with actual timestamps
     for (let i = 0; i < impedanceData.length; i++) {
       const impDataStr = escapeCSV(impedanceData[i].data);
-      csv += `${impedanceData[i].timestamp},${i},${impDataStr}\n`;
+      const eStartTime = stimulationStartTimestamp || 'N/A';
+      const gTimestamp = secondGTimestamp || 'N/A';
+      csv += `${impedanceData[i].timestamp},${i},${impDataStr},${eStartTime},${gTimestamp}\n`;
     }
 
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
