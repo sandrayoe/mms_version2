@@ -15,12 +15,47 @@
   margin: 0 auto;
 }
 
+.header {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .heading {
   font-size: 1.5rem;
   font-weight: bold;
   margin-top: 0.5rem;
   margin-bottom: 0.1rem; /* Reduce space below the heading */
   text-align: center;
+}
+
+.batteryIcon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  cursor: pointer;
+  padding: 8px;
+  transition: transform 0.2s;
+}
+
+.batteryIcon:hover {
+  transform: scale(1.1);
+}
+
+.batteryTooltip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  padding: 6px 10px;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 1000;
 }
 
 .buttonContainer {

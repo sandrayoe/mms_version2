@@ -766,11 +766,71 @@ const SensorPanel: React.FC = () => {
   if (!patientName || !patientName.trim()) impedanceSaveMissingReasons.push('Patient Name is required');
   if (!sensorName || !sensorName.trim()) impedanceSaveMissingReasons.push('Sensor Name is required');
 
+  // Battery percentage calculation based on voltage
+  const [showBatteryTooltip, setShowBatteryTooltip] = useState(false);
+  const batteryPercentage = React.useMemo(() => {
+    if (!lastResponse) return null;
+    // Try to extract numeric value from lastResponse (ADC value)
+    const match = lastResponse.match(/\d+/);
+    if (match) {
+      const adcValue = parseInt(match[0]);
+      
+      // Convert ADC to voltage at ADC pin
+      const Vadc = (adcValue / 1023) * 3.3;
+      
+      // Calculate battery voltage using voltage divider ratio
+      const voltageDividerRatio = (470 + 150) / 470;
+      const Vbat = Vadc * voltageDividerRatio;
+      
+      // Battery voltage range
+      const minVoltage = 3.4;  // Minimum operational voltage
+      const maxVoltage = 4.2;  // Fully charged voltage
+      
+      // Convert voltage to percentage
+      let percentage = ((Vbat - minVoltage) / (maxVoltage - minVoltage)) * 100;
+      percentage = Math.min(Math.max(percentage, 0), 100);
+      
+      return Math.round(percentage);
+    }
+    return null;
+  }, [lastResponse]);
+
+  const handleBatteryClick = async () => {
+    if (isConnected) {
+      try {
+        await sendCommand('V');
+        setShowBatteryTooltip(true);
+        setTimeout(() => setShowBatteryTooltip(false), 3000); // Auto-hide after 3 seconds
+      } catch (err) {
+        console.error('Failed to check battery:', err);
+      }
+    }
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <img src="/mms_logo_2.png" className={styles.logo} />
         <h1 className={styles.heading}>MMS - Sensor Readings</h1>
+        <div 
+          className={styles.batteryIcon}
+          onClick={handleBatteryClick}
+          onMouseEnter={() => setShowBatteryTooltip(true)}
+          onMouseLeave={() => setShowBatteryTooltip(false)}
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="6" width="18" height="12" rx="2" stroke={batteryPercentage !== null && batteryPercentage > 20 ? "#00b050" : batteryPercentage !== null ? "#ff4d4d" : "#666"} strokeWidth="2" />
+            <rect x="20" y="9" width="2" height="6" rx="1" fill={batteryPercentage !== null && batteryPercentage > 20 ? "#00b050" : batteryPercentage !== null ? "#ff4d4d" : "#666"} />
+            {batteryPercentage !== null && (
+              <rect x="4" y="8" width={Math.max(0, (batteryPercentage / 100) * 14)} height="8" rx="1" fill={batteryPercentage > 20 ? "#00b050" : "#ff4d4d"} />
+            )}
+          </svg>
+          {showBatteryTooltip && (
+            <div className={styles.batteryTooltip}>
+              {batteryPercentage !== null ? `Battery: ${batteryPercentage}%` : 'Click to check battery'}
+            </div>
+          )}
+        </div>
       </div>
       <div style={{ height: 8 }} />
       <div className={styles.topContainer}>
