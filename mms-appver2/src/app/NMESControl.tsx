@@ -783,8 +783,8 @@ const SensorPanel: React.FC = () => {
       const Vbat = Vadc * voltageDividerRatio;
       
       // Battery voltage range
-      const minVoltage = 3.4;  // Minimum operational voltage
-      const maxVoltage = 4.2;  // Fully charged voltage
+      const minVoltage = 3400;  // Minimum operational voltage
+      const maxVoltage = 4200;  // Fully charged voltage
       
       // Convert voltage to percentage
       let percentage = ((Vbat - minVoltage) / (maxVoltage - minVoltage)) * 100;
