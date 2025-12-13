@@ -770,14 +770,10 @@ const SensorPanel: React.FC = () => {
   const [showBatteryTooltip, setShowBatteryTooltip] = useState(false);
   const batteryPercentage = React.useMemo(() => {
     if (!lastResponse) return null;
-    // Try to extract numeric value from lastResponse (value in mV)
+    // Try to extract numeric value from lastResponse (battery voltage in mV)
     const match = lastResponse.match(/\d+/);
     if (match) {
-      const VadcMv = parseInt(match[0]);  // Voltage at ADC pin in mV
-      
-      // Calculate battery voltage using voltage divider ratio
-      const voltageDividerRatio = (470 + 150) / 470;
-      const Vbat = VadcMv * voltageDividerRatio;
+      const Vbat = parseInt(match[0]);  // Battery voltage in mV
       
       // Battery voltage range (in mV)
       const minVoltage = 3400;  // Minimum operational voltage (3.4V = 3400mV)
