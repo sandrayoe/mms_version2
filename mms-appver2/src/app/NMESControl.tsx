@@ -477,15 +477,31 @@ const SensorPanel: React.FC = () => {
       await initializeImpedance(electrodes);
       await new Promise(resolve => setTimeout(resolve, 300)); // Wait for initialization
 
-      // Step 2: Send g command (first measurement) and wait for data
+      // Step 2: Send g command (first measurement) and capture software timestamp
       console.log('[Continuous] Step 2: Sending first g command');
+      // Capture timestamp when first g is sent
+      const firstGNow = new Date(Date.now() + 60 * 60 * 1000);
+      const firstGYear = firstGNow.getUTCFullYear();
+      const firstGMonth = String(firstGNow.getUTCMonth() + 1).padStart(2, '0');
+      const firstGDay = String(firstGNow.getUTCDate()).padStart(2, '0');
+      const firstGHours = String(firstGNow.getUTCHours()).padStart(2, '0');
+      const firstGMinutes = String(firstGNow.getUTCMinutes()).padStart(2, '0');
+      const firstGSeconds = String(firstGNow.getUTCSeconds()).padStart(2, '0');
+      const firstGMilliseconds = String(firstGNow.getUTCMilliseconds()).padStart(3, '0');
+      const firstGTimestamp = `${firstGYear}-${firstGMonth}-${firstGDay}T${firstGHours}:${firstGMinutes}:${firstGSeconds}.${firstGMilliseconds}+01:00`;
+      console.log('[Continuous] First g timestamp:', firstGTimestamp);
       await measureImpedance();
-      console.log('[Continuous] Waiting 3 seconds for first measurement data...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds for all data to be received
-      console.log('[Continuous] First measurement wait complete');
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for g to complete
 
-      // Step 3: Send E command to start stimulation
-      console.log('[Continuous] Step 3: Sending E start');
+      // Step 3: Send h command to retrieve first measurement data
+      console.log('[Continuous] Step 3: Sending h command to retrieve first measurement data');
+      await sendCommand('h');
+      console.log('[Continuous] Waiting 3 seconds for first h data...');
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for all h data to be received
+      console.log('[Continuous] First h data wait complete');
+
+      // Step 4: Send E command to start stimulation
+      console.log('[Continuous] Step 4: Sending E start');
       // Capture timestamp when E start is sent
       const eStartNow = new Date(Date.now() + 60 * 60 * 1000);
       const eStartYear = eStartNow.getUTCFullYear();
@@ -500,9 +516,15 @@ const SensorPanel: React.FC = () => {
       console.log('[Continuous] E start timestamp:', eStartTimestamp);
       
       await stimulate(e1 - 1, e2 - 1, amp, true);
+      await new Promise(resolve => setTimeout(resolve, 300)); // Wait for E to start
 
-      // Step 4: Send g command (second measurement during stimulation)
-      console.log('[Continuous] Step 4: Sending second g command');
+      // Step 5: Send G command again (initialize impedance for second measurement)
+      console.log('[Continuous] Step 5: Sending second G command');
+      await initializeImpedance(electrodes);
+      await new Promise(resolve => setTimeout(resolve, 300)); // Wait for initialization
+
+      // Step 6: Send g command (second measurement during stimulation) and capture software timestamp
+      console.log('[Continuous] Step 6: Sending second g command');
       // Capture timestamp when second g is sent
       const now = new Date(Date.now() + 60 * 60 * 1000);
       const year = now.getUTCFullYear();
@@ -517,22 +539,25 @@ const SensorPanel: React.FC = () => {
       console.log('[Continuous] Second g timestamp:', timestamp);
       
       await measureImpedance();
+      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for g to complete
       
-      // Step 5: Wait 3 seconds for all measurement data to be received
-      console.log('[Continuous] Waiting 3 seconds for second measurement data...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      console.log('[Continuous] Second measurement wait complete');
+      // Step 7: Send h command to retrieve second measurement data
+      console.log('[Continuous] Step 7: Sending h command to retrieve second measurement data');
+      await sendCommand('h');
+      console.log('[Continuous] Waiting 3 seconds for second h data...');
+      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for all h data to be received
+      console.log('[Continuous] Second h data wait complete');
 
-      // Step 6: Send N command
-      console.log('[Continuous] Step 6: Sending N command');
+      // Step 8: Send N command
+      console.log('[Continuous] Step 8: Sending N command');
       await sendCommand('N');
 
       // Wait before stopping stimulation
       console.log('[Continuous] Waiting 3 seconds before E stop...');
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      // Step 7: Send E stop command
-      console.log('[Continuous] Step 7: Sending E stop');
+      // Step 9: Send E stop command
+      console.log('[Continuous] Step 9: Sending E stop');
       await stimulate(e1 - 1, e2 - 1, amp, false);
 
       setIsContinuousMeasuring(false);
@@ -678,50 +703,29 @@ const SensorPanel: React.FC = () => {
   };
 
   const handleSaveImpedance = () => {
-    // Create separate CSV file for impedance measurements only
+    // Save raw 'h' command output directly to CSV file
     if (!impedanceData || impedanceData.length === 0) {
       window.alert('No impedance measurements to save');
       return;
     }
 
-    const escapeCSV = (v: string) => {
-      if (v === null || v === undefined) return "";
-      const s = String(v);
-      if (s.includes('"')) {
-        return '"' + s.replace(/"/g, '""') + '"';
-      }
-      if (s.includes(',') || s.includes('\n') || s.includes('\r')) {
-        return '"' + s + '"';
-      }
-      return s;
-    };
-
-    // Generate electrode pairs (1-2, 1-3, ..., 1-9, 2-1, 2-3, ..., 9-8)
-    // Exclude same pairs like 1-1, 2-2, etc.
-    const electrodePairs: Array<{e1: number, e2: number}> = [];
-    for (let i = 1; i <= 9; i++) {
-      for (let j = 1; j <= 9; j++) {
-        if (i !== j) {
-          electrodePairs.push({e1: i, e2: j});
-        }
-      }
-    }
-
-    let csv = 'timestamp_utc,measurement_index,electrode_1,electrode_2,impedance_data\n';
+    // Write raw h command data directly - each line from the device should be in CSV format
+    // Expected format from device 'h' command: timestamp_ticks,electrode1,electrode2,resistance
+    let csv = 'timestamp_ticks,electrode1,electrode2,resistance\n';
     
-    // Use live impedance data with actual timestamps
+    // Append all raw impedance data lines from the 'h' command
     for (let i = 0; i < impedanceData.length; i++) {
-      const impDataStr = escapeCSV(impedanceData[i].data);
-      // Assign electrode pair based on measurement index (cycles through the pairs)
-      const pair = electrodePairs[i % electrodePairs.length];
-      csv += `${impedanceData[i].timestamp},${i},${pair.e1},${pair.e2},${impDataStr}\n`;
+      csv += impedanceData[i].data + '\n';
     }
     
-    // Add timestamps below the data
+    // Add software timestamps below the data for reference
     csv += `\n`;
+    csv += `# Software Timestamps (UTC+1)\n`;
     csv += `E Start Timestamp,${stimulationStartTimestamp || 'N/A'}\n`;
     csv += `Second G Timestamp,${secondGTimestamp || 'N/A'}\n`;
-
+    csv += `\n`;
+    csv += `# Note: Device timestamps are in ticks (50µs per tick)\n`;
+    csv += `# Conversion: timestamp_ticks × 50µs = time in microseconds since device startup\n`;
 
     const sanitize = (s: string) => s.trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-\.]/g, '');
     const patientPart = patientName ? sanitize(patientName) : 'patientNA';

@@ -37,6 +37,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const deviceRef = useRef<BluetoothDevice | null>(null);
   const isManualDisconnectRef = useRef(false);
+  const impedanceBufferRef = useRef<string>(''); // Buffer for accumulating impedance data across notifications
 
   const [imuData, setImuData] = useState<{ imu1_changes: BluetoothSample[]; imu2_changes: BluetoothSample[] }>({ imu1_changes: [], imu2_changes: [] });
   const imuDataRef = useRef(imuData);
@@ -401,9 +402,9 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const rawBytes = new Uint8Array(target.value.buffer);
     
     // Try to detect if this is a text response (ASCII printable characters)
-    // Text responses typically contain letters and are relatively short
+    // Text responses can be short (like "G-ok") or long (like multiple lines from 'h' command)
     let isTextResponse = false;
-    if (rawBytes.length > 0 && rawBytes.length < 50) {
+    if (rawBytes.length > 0 && rawBytes.length < 2000) {
       // Check if most bytes are printable ASCII (32-126) or common control chars (10, 13)
       const printableCount = Array.from(rawBytes).filter(
         b => (b >= 32 && b <= 126) || b === 10 || b === 13
@@ -419,9 +420,24 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           console.log('Device response:', text);
           setLastResponse(text);
           
-          // Check if this is impedance data (numeric values, could be resistance measurements)
-          // Impedance values are typically numeric strings, possibly with spaces or commas
-          if (/^[\d\s,\.]+$/.test(text)) {
+          // Check if this is impedance data from 'h' command
+          // Device sends each field on a separate line, accumulate data in buffer
+          // Expected pattern: timestamp\n,electrode1\n,electrode2\n,resistance (repeated)
+          
+          // Accumulate text in buffer
+          impedanceBufferRef.current += text;
+          console.log('[Impedance] Raw buffer length:', impedanceBufferRef.current.length, 'chars');
+          
+          // Remove all newlines and spaces to get continuous CSV
+          const continuous = impedanceBufferRef.current.replace(/[\n\r\s]+/g, '');
+          console.log('[Impedance] Cleaned buffer:', continuous.substring(0, 100) + (continuous.length > 100 ? '...' : ''));
+          
+          // Try to extract complete records: timestamp,electrode1,electrode2,resistance
+          const matches = continuous.match(/(\d+),(\d+),(\d+),(\d+)/g);
+          
+          if (matches && matches.length > 0) {
+            console.log(`[Impedance] Found ${matches.length} complete records!`);
+            
             // Create UTC+1 timestamp
             const now = new Date(Date.now() + 60 * 60 * 1000);
             const year = now.getUTCFullYear();
@@ -433,8 +449,22 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
             const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
             
-            setImpedanceData(prev => [...prev, {timestamp, data: text}]);
-            console.log('Impedance data captured:', text, 'at', timestamp);
+            // Store each parsed line in impedanceData
+            for (const line of matches) {
+              setImpedanceData(prev => [...prev, {timestamp, data: line}]);
+              console.log('[Impedance] Captured:', line);
+            }
+            
+            // Clear buffer after successful extraction
+            impedanceBufferRef.current = '';
+            console.log('[Impedance] Buffer cleared, total records extracted:', matches.length);
+          } else {
+            console.log('[Impedance] No complete records yet, buffer size:', continuous.length);
+            // If buffer grows too large without finding records, clear it
+            if (impedanceBufferRef.current.length > 5000) {
+              console.log('[Impedance] Buffer too large, clearing');
+              impedanceBufferRef.current = '';
+            }
           }
         }
       } catch (e) {
@@ -571,7 +601,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const measureImpedance = async () => {
     // Send 'g' command to start contact scan
-    // Data will accumulate across measurements until manually cleared
+    // Clear buffer before measurement to avoid stale data
+    impedanceBufferRef.current = '';
     await sendCommand('g');
     console.log('Impedance measurement started (g command sent)');
     
@@ -581,6 +612,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const clearImpedanceData = () => {
     setImpedanceData([]);
+    impedanceBufferRef.current = ''; // Clear buffer when clearing data
   };
 
   // Drain pending pairs into React state at a controlled rate to throttle
