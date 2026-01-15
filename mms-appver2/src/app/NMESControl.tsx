@@ -631,7 +631,7 @@ const SensorPanel: React.FC = () => {
 
     // Write raw h command data directly - each line from the device should be in CSV format
     // Expected format from device 'h' command: timestamp_ticks,electrode1,electrode2
-    let csv = 'timestamp_ticks,electrode1,electrode2\n';
+    let csv = 'electrode1,electrode2,impedance\n';
     
     // Append all raw impedance data lines from the 'h' command
     // Ensure fields are escaped/quoted so Excel treats them as text and does not auto-format
