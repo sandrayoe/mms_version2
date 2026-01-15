@@ -9,6 +9,9 @@ import { ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tool
 const SensorPanel: React.FC = () => {
   const { isConnected, imuData, startIMU, stopIMU, clearIMU, stimulate, sendCommand, lastResponse, initializeImpedance, measureImpedance, impedanceData, clearImpedanceData } = useBluetooth();
 
+  // Keep a ref to the latest lastResponse so async handlers can await expected replies
+  const lastResponseRef = useRef<string | null>(lastResponse);
+  useEffect(() => { lastResponseRef.current = lastResponse; }, [lastResponse]);
   const [sensor1Data, setSensor1Data] = useState<{ time: number; sensorValue: number }[]>([]);
   const [sensor2Data, setSensor2Data] = useState<{ time: number; sensorValue: number }[]>([]);
   // Number of samples to keep in the displayed chart window (most recent samples)
@@ -79,6 +82,19 @@ const SensorPanel: React.FC = () => {
   const [sensorName, setSensorName] = useState<string>("");
   // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
   const paramSnapshotsRef = useRef<Array<{ time: number; params: Record<string, string> }>>([]);
+
+  // CSV helper to escape fields that may contain commas/quotes/newlines (component scope)
+  const escapeCSV = (v: any) => {
+    if (v === null || v === undefined) return "";
+    const s = String(v);
+    if (s.includes('"')) {
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
+    if (s.includes(',') || s.includes('\n') || s.includes('\r')) {
+      return '"' + s + '"';
+    }
+    return s;
+  };
 
   // Helper to append a parameter snapshot (keeps chronological order)
   const pushParamSnapshot = (time: number, params: Record<string,string>) => {
@@ -459,110 +475,44 @@ const SensorPanel: React.FC = () => {
   };
 
   const handleContinuousMeasurement = async () => {
-    const e1 = parseInt(electrode1, 10);
-    const e2 = parseInt(electrode2, 10);
+    // New flow: send 'LXX' where XX is amplitude (2 ASCII digits), wait for 'L-ok', then send 'h'
     const amp = parseInt(amplitude, 10);
-
-    if (isNaN(e1) || isNaN(e2) || isNaN(amp) || e1 < 1 || e1 > 32 || e2 < 1 || e2 > 32 || amp < 0) {
-      window.alert('Please enter valid numbers for electrodes and amplitude');
+    if (isNaN(amp) || amp < 0 || amp > 120) {
+      window.alert('Please enter a valid amplitude (0-120)');
       return;
     }
 
     setIsContinuousMeasuring(true);
 
+    // Helper to wait for an expected substring in lastResponse with timeout
+    const waitForResponse = (expected: string, timeoutMs = 5000) => new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const check = () => {
+        const cur = lastResponseRef.current;
+        if (cur && cur.includes(expected)) return resolve();
+        if (Date.now() - start > timeoutMs) return reject(new Error('Response timeout'));
+        setTimeout(check, 150);
+      };
+      check();
+    });
+
     try {
-      // Step 1: Send G command (initialize impedance)
-      const electrodes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
-      console.log('[Continuous] Step 1: Sending G command');
-      await initializeImpedance(electrodes);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Wait for initialization
+      const ampStr = String(amp).padStart(2, '0');
+      console.log('[Continuous] Sending L command with amplitude:', ampStr);
+      await sendCommand('L' + ampStr);
 
-      // Step 2: Send g command (first measurement) and capture software timestamp
-      console.log('[Continuous] Step 2: Sending first g command');
-      // Capture timestamp when first g is sent
-      const firstGNow = new Date(Date.now() + 60 * 60 * 1000);
-      const firstGYear = firstGNow.getUTCFullYear();
-      const firstGMonth = String(firstGNow.getUTCMonth() + 1).padStart(2, '0');
-      const firstGDay = String(firstGNow.getUTCDate()).padStart(2, '0');
-      const firstGHours = String(firstGNow.getUTCHours()).padStart(2, '0');
-      const firstGMinutes = String(firstGNow.getUTCMinutes()).padStart(2, '0');
-      const firstGSeconds = String(firstGNow.getUTCSeconds()).padStart(2, '0');
-      const firstGMilliseconds = String(firstGNow.getUTCMilliseconds()).padStart(3, '0');
-      const firstGTimestamp = `${firstGYear}-${firstGMonth}-${firstGDay}T${firstGHours}:${firstGMinutes}:${firstGSeconds}.${firstGMilliseconds}+01:00`;
-      console.log('[Continuous] First g timestamp:', firstGTimestamp);
-      await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for g to complete
-
-      // Step 3: Send h command to retrieve first measurement data
-      console.log('[Continuous] Step 3: Sending h command to retrieve first measurement data');
-      await sendCommand('h');
-      console.log('[Continuous] Waiting 3 seconds for first h data...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for all h data to be received
-      console.log('[Continuous] First h data wait complete');
-
-      // Step 4: Send E command to start stimulation
-      console.log('[Continuous] Step 4: Sending E start');
-      // Capture timestamp when E start is sent
-      const eStartNow = new Date(Date.now() + 60 * 60 * 1000);
-      const eStartYear = eStartNow.getUTCFullYear();
-      const eStartMonth = String(eStartNow.getUTCMonth() + 1).padStart(2, '0');
-      const eStartDay = String(eStartNow.getUTCDate()).padStart(2, '0');
-      const eStartHours = String(eStartNow.getUTCHours()).padStart(2, '0');
-      const eStartMinutes = String(eStartNow.getUTCMinutes()).padStart(2, '0');
-      const eStartSeconds = String(eStartNow.getUTCSeconds()).padStart(2, '0');
-      const eStartMilliseconds = String(eStartNow.getUTCMilliseconds()).padStart(3, '0');
-      const eStartTimestamp = `${eStartYear}-${eStartMonth}-${eStartDay}T${eStartHours}:${eStartMinutes}:${eStartSeconds}.${eStartMilliseconds}+01:00`;
-      setStimulationStartTimestamp(eStartTimestamp);
-      console.log('[Continuous] E start timestamp:', eStartTimestamp);
-      
-      await stimulate(e1 - 1, e2 - 1, amp, true);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Wait for E to start
-
-      // Step 5: Send G command again (initialize impedance for second measurement)
-      console.log('[Continuous] Step 5: Sending second G command');
-      await initializeImpedance(electrodes);
-      await new Promise(resolve => setTimeout(resolve, 300)); // Wait for initialization
-
-      // Step 6: Send g command (second measurement during stimulation) and capture software timestamp
-      console.log('[Continuous] Step 6: Sending second g command');
-      // Capture timestamp when second g is sent
-      const now = new Date(Date.now() + 60 * 60 * 1000);
-      const year = now.getUTCFullYear();
-      const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(now.getUTCDate()).padStart(2, '0');
-      const hours = String(now.getUTCHours()).padStart(2, '0');
-      const minutes = String(now.getUTCMinutes()).padStart(2, '0');
-      const seconds = String(now.getUTCSeconds()).padStart(2, '0');
-      const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
-      const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
-      setSecondGTimestamp(timestamp);
-      console.log('[Continuous] Second g timestamp:', timestamp);
-      
-      await measureImpedance();
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait for g to complete
-      
-      // Step 7: Send h command to retrieve second measurement data
-      console.log('[Continuous] Step 7: Sending h command to retrieve second measurement data');
-      await sendCommand('h');
-      console.log('[Continuous] Waiting 3 seconds for second h data...');
-      await new Promise(resolve => setTimeout(resolve, 3000)); // Wait for all h data to be received
-      console.log('[Continuous] Second h data wait complete');
-
-      // Step 8: Send N command
-      console.log('[Continuous] Step 8: Sending N command');
-      await sendCommand('N');
-
-      // Wait before stopping stimulation
-      console.log('[Continuous] Waiting 3 seconds before E stop...');
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Step 9: Send E stop command
-      console.log('[Continuous] Step 9: Sending E stop');
-      await stimulate(e1 - 1, e2 - 1, amp, false);
-
-      setIsContinuousMeasuring(false);
+      // Wait for device to acknowledge with 'L-ok'
+      try {
+        await waitForResponse('L-ok', 8000);
+        console.log('[Continuous] Received L-ok, requesting impedance data (h)');
+        await sendCommand('h');
+      } catch (err) {
+        console.error('Did not receive L-ok:', err);
+        window.alert('Device did not acknowledge L command (no L-ok)');
+      }
     } catch (err) {
       console.error('Continuous measurement failed:', err);
+    } finally {
       setIsContinuousMeasuring(false);
     }
   };
@@ -593,26 +543,15 @@ const SensorPanel: React.FC = () => {
     // Prepare parameter snapshots (ensure sorted by time)
     const snaps = (paramSnapshotsRef.current ?? []).slice().sort((a, b) => a.time - b.time);
 
-    // CSV helper to escape fields that may contain commas/quotes/newlines
-    const escapeCSV = (v: string) => {
-      if (v === null || v === undefined) return "";
-      const s = String(v);
-      if (s.includes('"')) {
-        return '"' + s.replace(/"/g, '""') + '"';
-      }
-      if (s.includes(',') || s.includes('\n') || s.includes('\r')) {
-        return '"' + s + '"';
-      }
-      return s;
-    };
+    // CSV helper moved to component scope
 
   // Define parameter column order
   const paramCols = ['frequency','amplitude','electrode1','electrode2'];
   // Add patient/sensor metadata columns to header
   const metaCols = ['patientName','sensorName'];
 
-  // Build header (include UTC timestamp, sensor values, params, metadata, and relative time)
-  let csv = ['timestamp_utc','sensor1','sensor2', ...paramCols, ...metaCols, 'relative_time_s'].join(',') + '\n';
+  // Build header (relative time first to avoid confusion: relative_time_s, sensor1, sensor2, params, metadata)
+  let csv = ['relative_time_s','sensor1','sensor2', ...paramCols, ...metaCols].join(',') + '\n';
 
     // Use a pointer into snaps because times are sorted ascending
     let snapIdx = 0;
@@ -637,41 +576,22 @@ const SensorPanel: React.FC = () => {
           paramsForRow = snaps[0].params;
         }
       }
-      // Convert relative time (seconds) to absolute UTC+1 timestamp in ISO 8601 format
-      // Use sessionWallClockStartRef + relative time to calculate the actual timestamp for each data point
-      const actualTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (t * 1000);
-      const utcPlus1Time = new Date(actualTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
-      // Manually format to ensure +01:00 timezone is shown correctly
-      const year = utcPlus1Time.getUTCFullYear();
-      const month = String(utcPlus1Time.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(utcPlus1Time.getUTCDate()).padStart(2, '0');
-      const hours = String(utcPlus1Time.getUTCHours()).padStart(2, '0');
-      const minutes = String(utcPlus1Time.getUTCMinutes()).padStart(2, '0');
-      const seconds = String(utcPlus1Time.getUTCSeconds()).padStart(2, '0');
-      const milliseconds = String(utcPlus1Time.getUTCMilliseconds()).padStart(3, '0');
-      const absoluteTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
+      // No software absolute timestamps: write sensor values and relative time only
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
-  const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
-  const metaVals = [escapeCSV(patientName || 'N/A'), escapeCSV(sensorName || 'N/A')];
-  csv += `${absoluteTimestamp},${v1},${v2},${paramVals.join(',')},${metaVals.join(',')},${t}\n`;
+      const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
+      const metaVals = [escapeCSV(patientName || 'N/A'), escapeCSV(sensorName || 'N/A')];
+      // Escape all fields and put relative time first
+      const rowFields = [escapeCSV(String(t)), escapeCSV(v1), escapeCSV(v2), ...paramVals, ...metaVals];
+      csv += rowFields.join(',') + '\n';
     }
 
-    // Append markers section so time markers are preserved in the recording file
+    // Append markers section so time markers are preserved (no software timestamps)
     if (markers && markers.length) {
+      // Add a small marker section header for clarity
+      csv += '\n# Markers:type,type,relative_time_s\n';
       for (const m of markers) {
-        const markerTimestamp = (sessionWallClockStartRef.current ?? Date.now()) + (m.time * 1000);
-        const markerUTCPlus1 = new Date(markerTimestamp + 60 * 60 * 1000); // Add 1 hour for UTC+1
-        // Manually format to ensure +01:00 timezone is shown correctly
-        const year = markerUTCPlus1.getUTCFullYear();
-        const month = String(markerUTCPlus1.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(markerUTCPlus1.getUTCDate()).padStart(2, '0');
-        const hours = String(markerUTCPlus1.getUTCHours()).padStart(2, '0');
-        const minutes = String(markerUTCPlus1.getUTCMinutes()).padStart(2, '0');
-        const seconds = String(markerUTCPlus1.getUTCSeconds()).padStart(2, '0');
-        const milliseconds = String(markerUTCPlus1.getUTCMilliseconds()).padStart(3, '0');
-        const markerUTC = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
-        csv += `${m.type},${m.type},${markerUTC},${m.time}\n`;
+        csv += [escapeCSV(m.type), escapeCSV(m.type), escapeCSV(String(m.time))].join(',') + '\n';
       }
     }
 
@@ -710,19 +630,18 @@ const SensorPanel: React.FC = () => {
     }
 
     // Write raw h command data directly - each line from the device should be in CSV format
-    // Expected format from device 'h' command: timestamp_ticks,electrode1,electrode2,resistance
-    let csv = 'timestamp_ticks,electrode1,electrode2,resistance\n';
+    // Expected format from device 'h' command: timestamp_ticks,electrode1,electrode2
+    let csv = 'timestamp_ticks,electrode1,electrode2\n';
     
     // Append all raw impedance data lines from the 'h' command
+    // Ensure fields are escaped/quoted so Excel treats them as text and does not auto-format
     for (let i = 0; i < impedanceData.length; i++) {
-      csv += impedanceData[i].data + '\n';
+      const raw = impedanceData[i].data || '';
+      const parts = raw.split(',').map(p => escapeCSV(p));
+      csv += parts.join(',') + '\n';
     }
     
-    // Add software timestamps below the data for reference
-    csv += `\n`;
-    csv += `# Software Timestamps (UTC+1)\n`;
-    csv += `E Start Timestamp,${stimulationStartTimestamp || 'N/A'}\n`;
-    csv += `Second G Timestamp,${secondGTimestamp || 'N/A'}\n`;
+    // Note: device timestamps are in ticks (50µs per tick). No software timestamps are recorded.
     csv += `\n`;
     csv += `# Note: Device timestamps are in ticks (50µs per tick)\n`;
     csv += `# Conversion: timestamp_ticks × 50µs = time in microseconds since device startup\n`;

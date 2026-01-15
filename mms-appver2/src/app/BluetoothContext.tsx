@@ -415,56 +415,46 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (isTextResponse) {
       // Parse as text response
       try {
-        const text = new TextDecoder().decode(rawBytes).trim();
-        if (text.length > 0) {
-          console.log('Device response:', text);
-          setLastResponse(text);
-          
-          // Check if this is impedance data from 'h' command
-          // Device sends each field on a separate line, accumulate data in buffer
-          // Expected pattern: timestamp\n,electrode1\n,electrode2\n,resistance (repeated)
-          
-          // Accumulate text in buffer
-          impedanceBufferRef.current += text;
-          console.log('[Impedance] Raw buffer length:', impedanceBufferRef.current.length, 'chars');
-          
-          // Remove all newlines and spaces to get continuous CSV
-          const continuous = impedanceBufferRef.current.replace(/[\n\r\s]+/g, '');
-          console.log('[Impedance] Cleaned buffer:', continuous.substring(0, 100) + (continuous.length > 100 ? '...' : ''));
-          
-          // Try to extract complete records: timestamp,electrode1,electrode2,resistance
-          const matches = continuous.match(/(\d+),(\d+),(\d+),(\d+)/g);
-          
-          if (matches && matches.length > 0) {
-            console.log(`[Impedance] Found ${matches.length} complete records!`);
-            
-            // Create UTC+1 timestamp
-            const now = new Date(Date.now() + 60 * 60 * 1000);
-            const year = now.getUTCFullYear();
-            const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-            const day = String(now.getUTCDate()).padStart(2, '0');
-            const hours = String(now.getUTCHours()).padStart(2, '0');
-            const minutes = String(now.getUTCMinutes()).padStart(2, '0');
-            const seconds = String(now.getUTCSeconds()).padStart(2, '0');
-            const milliseconds = String(now.getUTCMilliseconds()).padStart(3, '0');
-            const timestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+01:00`;
-            
-            // Store each parsed line in impedanceData
-            for (const line of matches) {
-              setImpedanceData(prev => [...prev, {timestamp, data: line}]);
-              console.log('[Impedance] Captured:', line);
+        const text = new TextDecoder().decode(rawBytes);
+        const received = text;
+        if (received && received.length > 0) {
+          // Keep lastResponse trimmed for UI/status but preserve raw text for parsing
+          const trimmedForStatus = received.trim();
+          if (trimmedForStatus.length > 0) setLastResponse(trimmedForStatus);
+
+          // Accumulate into buffer preserving newlines so we can split into complete lines
+          impedanceBufferRef.current += received;
+          // Split into lines; the last element may be an incomplete fragment
+          const parts = impedanceBufferRef.current.split(/\r?\n/);
+          // Keep the trailing partial line in buffer
+          impedanceBufferRef.current = parts.pop() || '';
+
+          for (const rawLine of parts) {
+            const line = rawLine.trim();
+            if (!line) continue;
+            // Preserve marker lines exactly if they match IMP or STR (case-insensitive)
+            if (/^IMP$/i.test(line) || /^STR$/i.test(line)) {
+              setImpedanceData(prev => [...prev, { timestamp: '', data: line.toUpperCase() }]);
+              continue;
             }
-            
-            // Clear buffer after successful extraction
-            impedanceBufferRef.current = '';
-            console.log('[Impedance] Buffer cleared, total records extracted:', matches.length);
-          } else {
-            console.log('[Impedance] No complete records yet, buffer size:', continuous.length);
-            // If buffer grows too large without finding records, clear it
-            if (impedanceBufferRef.current.length > 5000) {
-              console.log('[Impedance] Buffer too large, clearing');
-              impedanceBufferRef.current = '';
+
+            // Accept numeric CSV rows with 3 or 4 comma-separated numeric fields.
+            // Examples: "30900,2040,2040" or "30900,2040,2040,123"
+            if (/^\d+,\d+,\d+(?:,\d+)?$/.test(line)) {
+              setImpedanceData(prev => [...prev, { timestamp: '', data: line }]);
+              continue;
             }
+
+            // Otherwise, if the line looks like a short status (e.g. "G-ok", "L-ok"), keep for lastResponse
+            // but don't attempt to parse as impedance numeric data.
+            // Trim and set as lastResponse for UI visibility
+            const short = line.length <= 120 ? line : line.substring(0, 120) + '...';
+            setLastResponse(short);
+          }
+
+          // Safety: if buffer grows unreasonably large without producing valid lines, clamp it
+          if (impedanceBufferRef.current.length > 8000) {
+            impedanceBufferRef.current = impedanceBufferRef.current.slice(-4000);
           }
         }
       } catch (e) {
