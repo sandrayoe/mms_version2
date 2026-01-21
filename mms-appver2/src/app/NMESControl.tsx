@@ -75,6 +75,9 @@ const SensorPanel: React.FC = () => {
   const [isStimulating, setIsStimulating] = useState<boolean>(false);
   const [isContinuousMeasuring, setIsContinuousMeasuring] = useState<boolean>(false);
   const continuousMeasurementTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [contStimPair, setContStimPair] = useState<string>("12");
+  const [contImpPair, setContImpPair] = useState<string>("12");
+  const [contAmplitude, setContAmplitude] = useState<string>(amplitude);
   const [stimulationStartTimestamp, setStimulationStartTimestamp] = useState<string>("");
   const [secondGTimestamp, setSecondGTimestamp] = useState<string>("");
   // New inputs for saving metadata
@@ -475,16 +478,59 @@ const SensorPanel: React.FC = () => {
   };
 
   const handleContinuousMeasurement = async () => {
-    // New flow: send 'LXX' where XX is amplitude (2 ASCII digits), wait for 'L-ok', then send 'h'
-    const amp = parseInt(amplitude, 10);
-    if (isNaN(amp) || amp < 0 || amp > 120) {
-      window.alert('Please enter a valid amplitude (0-120)');
+    // New flow: send 'LXXYYZZ' where XX=stim pair, YY=impedance reading pair, ZZ=amplitude
+    // Support inputs like '1-2' (meaning device 0-1) or single numbers ('1' -> 0)
+    const formatPairForDevice = (input: string) => {
+      if (!input || !input.trim()) throw new Error('Empty pair');
+      const s = input.trim();
+      // Accept 'A-B' format (legacy), two-char format like '12' meaning '1' and '2', or single number '9'
+      if (s.includes('-')) {
+        const parts = s.split('-').map(p => p.trim());
+        if (parts.length !== 2) throw new Error('Pair must be in A-B format');
+        const a = parseInt(parts[0], 10);
+        const b = parseInt(parts[1], 10);
+        if (isNaN(a) || isNaN(b)) throw new Error('Invalid numbers in pair');
+        const da = a - 1;
+        const db = b - 1;
+        if (da < 0 || db < 0 || da > 99 || db > 99) throw new Error('Pair numbers out of range');
+        if (da <= 9 && db <= 9) return `${da}${db}`;
+        return String(da).padStart(2, '0');
+      }
+
+      // Two-digit shorthand like '12' -> '1' and '2'
+      if (/^\d{2}$/.test(s)) {
+        const a = parseInt(s[0], 10);
+        const b = parseInt(s[1], 10);
+        const da = a - 1;
+        const db = b - 1;
+        if (da < 0 || db < 0 || da > 99 || db > 99) throw new Error('Pair numbers out of range');
+        if (da <= 9 && db <= 9) return `${da}${db}`;
+        return String(da).padStart(2, '0');
+      }
+
+      // single number: decrement and pad to 2 digits
+      const n = parseInt(s, 10);
+      if (isNaN(n)) throw new Error('Invalid pair number');
+      const dn = n - 1;
+      if (dn < 0 || dn > 99) throw new Error('Pair number out of range');
+      return String(dn).padStart(2, '0');
+    };
+
+    let stimCode: string;
+    let impCode: string;
+    let amp: number;
+    try {
+      stimCode = formatPairForDevice(contStimPair);
+      impCode = formatPairForDevice(contImpPair);
+      amp = parseInt(contAmplitude, 10);
+      if (isNaN(amp) || amp < 0 || amp > 120) throw new Error('Amplitude out of range');
+    } catch (err: any) {
+      window.alert(err.message || 'Invalid continuous measurement inputs');
       return;
     }
 
     setIsContinuousMeasuring(true);
 
-    // Helper to wait for an expected substring in lastResponse with timeout
     const waitForResponse = (expected: string, timeoutMs = 5000) => new Promise<void>((resolve, reject) => {
       const start = Date.now();
       const check = () => {
@@ -498,13 +544,11 @@ const SensorPanel: React.FC = () => {
 
     try {
       const ampStr = String(amp).padStart(2, '0');
-      console.log('[Continuous] Sending L command with amplitude:', ampStr);
-      await sendCommand('L' + ampStr);
+      const cmd = 'L' + stimCode + impCode + ampStr;
+      await sendCommand(cmd);
 
-      // Wait for device to acknowledge with 'L-ok'
       try {
         await waitForResponse('L-ok', 8000);
-        console.log('[Continuous] Received L-ok, requesting impedance data (h)');
         await sendCommand('h');
       } catch (err) {
         console.error('Did not receive L-ok:', err);
@@ -887,14 +931,29 @@ const SensorPanel: React.FC = () => {
                 >
                   Measure Impedance
                 </button>
-                <button 
-                  className={styles.button} 
-                  onClick={handleContinuousMeasurement} 
-                  disabled={!isConnected || isContinuousMeasuring}
-                  style={{ backgroundColor: isContinuousMeasuring ? '#999' : undefined }}
-                >
-                  {isContinuousMeasuring ? 'Measuring...' : 'Continuous Measurement'}
-                </button>
+                {/* Continuous measurement panel: build LXXYYZZ and request impedance (h) */}
+                <div style={{ border: '1px solid #e0e0e0', padding: 8, borderRadius: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                    <span className={styles.labelRow}>Stim Pair (XX):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="text" value={contStimPair} onChange={(e) => setContStimPair(e.target.value)} />
+                  </label>
+                  <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                    <span className={styles.labelRow}>Imp Pair (YY):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="text" value={contImpPair} onChange={(e) => setContImpPair(e.target.value)} />
+                  </label>
+                  <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                    <span className={styles.labelRow}>Amplitude (ZZ):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" max="120" value={contAmplitude} onChange={(e) => setContAmplitude(e.target.value)} />
+                  </label>
+                  <button
+                    className={styles.button}
+                    onClick={handleContinuousMeasurement}
+                    disabled={!isConnected || isContinuousMeasuring}
+                    style={{ backgroundColor: isContinuousMeasuring ? '#999' : undefined }}
+                  >
+                    {isContinuousMeasuring ? 'Measuring...' : 'Start Continuous Measurement'}
+                  </button>
+                </div>
                 <button 
                   className={styles.button} 
                   onClick={clearImpedanceData} 
