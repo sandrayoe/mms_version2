@@ -74,10 +74,12 @@ const SensorPanel: React.FC = () => {
   const [amplitude, setAmplitude] = useState<string>("5");
   const [isStimulating, setIsStimulating] = useState<boolean>(false);
   const [isContinuousMeasuring, setIsContinuousMeasuring] = useState<boolean>(false);
+  const isContinuousMeasuringRef = useRef<boolean>(false);
   const continuousMeasurementTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [contStimPair, setContStimPair] = useState<string>("12");
   const [contImpPair, setContImpPair] = useState<string>("12");
   const [contAmplitude, setContAmplitude] = useState<string>(amplitude);
+  const [contDelay, setContDelay] = useState<string>("5");
   const [stimulationStartTimestamp, setStimulationStartTimestamp] = useState<string>("");
   const [secondGTimestamp, setSecondGTimestamp] = useState<string>("");
   // New inputs for saving metadata
@@ -478,8 +480,7 @@ const SensorPanel: React.FC = () => {
   };
 
   const handleContinuousMeasurement = async () => {
-    // New flow: send 'LXXYYZZ' where XX=stim pair, YY=impedance reading pair, ZZ=amplitude
-    // Support inputs like '1-2' (meaning device 0-1) or single numbers ('1' -> 0)
+    // New flow with delay: G (9electrode) - g - wait for g - delay - L - wait for L-ok - delay - repeat
     const formatPairForDevice = (input: string) => {
       if (!input || !input.trim()) throw new Error('Empty pair');
       const s = input.trim();
@@ -519,17 +520,21 @@ const SensorPanel: React.FC = () => {
     let stimCode: string;
     let impCode: string;
     let amp: number;
+    let delaySeconds: number;
     try {
       stimCode = formatPairForDevice(contStimPair);
       impCode = formatPairForDevice(contImpPair);
       amp = parseInt(contAmplitude, 10);
+      delaySeconds = parseFloat(contDelay);
       if (isNaN(amp) || amp < 0 || amp > 120) throw new Error('Amplitude out of range');
+      if (isNaN(delaySeconds) || delaySeconds < 0) throw new Error('Delay must be a positive number');
     } catch (err: any) {
       window.alert(err.message || 'Invalid continuous measurement inputs');
       return;
     }
 
     setIsContinuousMeasuring(true);
+    isContinuousMeasuringRef.current = true;
 
     const waitForResponse = (expected: string, timeoutMs = 5000) => new Promise<void>((resolve, reject) => {
       const start = Date.now();
@@ -542,22 +547,78 @@ const SensorPanel: React.FC = () => {
       check();
     });
 
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
     try {
+      // Sequence: G - g - delay - L - h - G - g
+      // Step 1: Send G command (initialize 9 electrodes)
+      await sendCommand('G012345678PPPPPPP');
+      await waitForResponse('G-ok', 8000);
+      
+      if (!isContinuousMeasuringRef.current) {
+        setIsContinuousMeasuring(false);
+        return;
+      }
+      
+      // Step 2: Send g command (measure impedance)
+      // Note: Device immediately prints out all impedance readings data
+      await sendCommand('g');
+      // Wait for data transmission (min 3s) plus any additional user-specified delay
+      await delay(Math.max(3000, delaySeconds * 1000));
+      
+      if (!isContinuousMeasuringRef.current) {
+        setIsContinuousMeasuring(false);
+        return;
+      }
+      
+      if (!isContinuousMeasuringRef.current) {
+        setIsContinuousMeasuring(false);
+        return;
+      }
+      
+      // Step 4: Send L command with parameters
       const ampStr = String(amp).padStart(2, '0');
       const cmd = 'L' + stimCode + impCode + ampStr;
       await sendCommand(cmd);
-
-      try {
-        await waitForResponse('L-ok', 8000);
-        await sendCommand('h');
-      } catch (err) {
-        console.error('Did not receive L-ok:', err);
-        window.alert('Device did not acknowledge L command (no L-ok)');
+      await waitForResponse('L-ok', 5000);
+      
+      if (!isContinuousMeasuringRef.current) {
+        setIsContinuousMeasuring(false);
+        return;
       }
+      
+      // Step 5: Send h to get impedance results
+      await sendCommand('h');
+      // Wait for data transmission (min 3s) plus any additional user-specified delay
+      await delay(Math.max(3000, delaySeconds * 1000));
+      
+      if (!isContinuousMeasuringRef.current) {
+        setIsContinuousMeasuring(false);
+        return;
+      }
+      
+      // Step 6: Send G command again (initialize 9 electrodes)
+      await sendCommand('G012345678PPPPPPP');
+      await waitForResponse('G-ok', 2000);
+      
+      if (!isContinuousMeasuringRef.current) {
+        setIsContinuousMeasuring(false);
+        return;
+      }
+      
+      // Step 7: Send g command (measure impedance) - final step
+      await sendCommand('g');
+      // Wait for device to finish sending all impedance data
+      await delay(3000);
+      
+      // Stop after second g is finished
+      setIsContinuousMeasuring(false);
+      isContinuousMeasuringRef.current = false;
     } catch (err) {
       console.error('Continuous measurement failed:', err);
-    } finally {
+      window.alert('Continuous measurement failed.');
       setIsContinuousMeasuring(false);
+      isContinuousMeasuringRef.current = false;
     }
   };
 
@@ -934,24 +995,35 @@ const SensorPanel: React.FC = () => {
                 {/* Continuous measurement panel: build LXXYYZZ and request impedance (h) */}
                 <div style={{ border: '1px solid #e0e0e0', padding: 8, borderRadius: 4, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
-                    <span className={styles.labelRow}>Stim Pair (XX):</span>
+                    <span className={styles.labelRow}>Stim Pair:</span>
                     <input className={`${styles.textInput} ${styles.smallInput}`} type="text" value={contStimPair} onChange={(e) => setContStimPair(e.target.value)} />
                   </label>
                   <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
-                    <span className={styles.labelRow}>Imp Pair (YY):</span>
+                    <span className={styles.labelRow}>Imp Pair:</span>
                     <input className={`${styles.textInput} ${styles.smallInput}`} type="text" value={contImpPair} onChange={(e) => setContImpPair(e.target.value)} />
                   </label>
                   <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
-                    <span className={styles.labelRow}>Amplitude (ZZ):</span>
+                    <span className={styles.labelRow}>Amplitude (mA):</span>
                     <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" max="120" value={contAmplitude} onChange={(e) => setContAmplitude(e.target.value)} />
+                  </label>
+                  <label className={styles.inputLabel} style={{ marginBottom: 0 }}>
+                    <span className={styles.labelRow}>Delay (s):</span>
+                    <input className={`${styles.textInput} ${styles.smallInput}`} type="number" min="0" step="0.1" value={contDelay} onChange={(e) => setContDelay(e.target.value)} />
                   </label>
                   <button
                     className={styles.button}
-                    onClick={handleContinuousMeasurement}
-                    disabled={!isConnected || isContinuousMeasuring}
-                    style={{ backgroundColor: isContinuousMeasuring ? '#999' : undefined }}
+                    onClick={() => {
+                      if (isContinuousMeasuring) {
+                        setIsContinuousMeasuring(false);
+                        isContinuousMeasuringRef.current = false;
+                      } else {
+                        handleContinuousMeasurement();
+                      }
+                    }}
+                    disabled={!isConnected}
+                    style={{ backgroundColor: isContinuousMeasuring ? '#ff4d4d' : undefined }}
                   >
-                    {isContinuousMeasuring ? 'Measuring...' : 'Start Continuous Measurement'}
+                    {isContinuousMeasuring ? 'Stop Continuous Measurement' : 'Start Continuous Measurement'}
                   </button>
                 </div>
                 <button 
