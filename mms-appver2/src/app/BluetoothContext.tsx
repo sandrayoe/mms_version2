@@ -11,6 +11,7 @@ interface BluetoothSample {
 interface BluetoothContextType {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
+  reconnectGATT: () => Promise<void>;
   isConnected: boolean;
   sendCommand: (...args: (string | number)[]) => Promise<void>;
   stimulate: (electrode1: number, electrode2: number, amplitude: number, runStop: boolean) => Promise<void>;
@@ -36,6 +37,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [impedanceData, setImpedanceData] = useState<Array<{timestamp: string; data: string}>>([]);
 
   const deviceRef = useRef<BluetoothDevice | null>(null);
+  const rxCharacteristicRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
+  const txCharacteristicRef = useRef<BluetoothRemoteGATTCharacteristic | null>(null);
   const isManualDisconnectRef = useRef(false);
   const impedanceBufferRef = useRef<string>(''); // Buffer for accumulating impedance data across notifications
 
@@ -146,6 +149,9 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         txChar.addEventListener("characteristicvaluechanged", handleIncomingData);
       }
 
+      // Update refs immediately (synchronous) so sendCommand can use them right away
+      rxCharacteristicRef.current = rxChar || null;
+      txCharacteristicRef.current = txChar || null;
       setRxCharacteristic(rxChar || null);
       setTxCharacteristic(txChar || null);
       setDevice(selectedDevice);
@@ -163,6 +169,62 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  /** Re-connect to the GATT server on the already-paired device without re-requesting it.
+   *  Used to flush the Web Bluetooth GATT write queue which saturates after ~40 writes.
+   *  Retries the connect step up to 5 times with increasing delays. */
+  const reconnectGATT = async (): Promise<void> => {
+    const dev = deviceRef.current;
+    if (!dev || !dev.gatt) throw new Error("reconnectGATT: no device");
+
+    // Suppress the disconnection handler while we intentionally cycle GATT
+    isManualDisconnectRef.current = true;
+    try {
+      // Step 1: disconnect
+      if (dev.gatt.connected) {
+        dev.gatt.disconnect();
+      }
+
+      // Step 2: reconnect with retries
+      const MAX_RETRIES = 5;
+      let server: BluetoothRemoteGATTServer | undefined;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        // Increasing settle time: 500, 800, 1200, 1700, 2300 ms
+        const waitMs = 500 + attempt * 300 + attempt * attempt * 50;
+        await new Promise(r => setTimeout(r, waitMs));
+        try {
+          server = await dev.gatt.connect();
+          if (server?.connected) break;
+        } catch (e: any) {
+          console.warn(`GATT reconnect attempt ${attempt + 1}/${MAX_RETRIES} failed:`, e.message || e);
+          if (attempt === MAX_RETRIES - 1) throw e;
+        }
+      }
+
+      if (!server?.connected) {
+        throw new Error("reconnectGATT: failed to reconnect after retries");
+      }
+
+      // Step 3: re-acquire service and characteristics
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const rxChar = await service.getCharacteristic(RX_CHARACTERISTIC_UUID);
+      const txChar = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
+
+      if (txChar) {
+        try { txChar.removeEventListener("characteristicvaluechanged", handleIncomingData); } catch {}
+        await txChar.startNotifications();
+        txChar.addEventListener("characteristicvaluechanged", handleIncomingData);
+      }
+
+      // Update refs immediately (synchronous) — critical so sendCommand sees new chars right away
+      rxCharacteristicRef.current = rxChar || null;
+      txCharacteristicRef.current = txChar || null;
+      setRxCharacteristic(rxChar || null);
+      setTxCharacteristic(txChar || null);
+    } finally {
+      isManualDisconnectRef.current = false;
+    }
+  };
+
   const disconnect = async (): Promise<void> => {
     if (deviceRef.current) {
       isManualDisconnectRef.current = true;
@@ -173,6 +235,8 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       // Clear provider IMU data on disconnect so UI shows an empty buffer.
+      rxCharacteristicRef.current = null;
+      txCharacteristicRef.current = null;
       setImuData({ imu1_changes: [], imu2_changes: [] });
       setIsConnected(false);
       setDevice(null);
@@ -479,23 +543,25 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const startIMU = async () => {
-    if (!txCharacteristic) return;
+    const txChar = txCharacteristicRef.current;
+    if (!txChar) return;
     try {
       await sendCommand("b");
-      txCharacteristic.addEventListener("characteristicvaluechanged", handleIncomingData);
-      await txCharacteristic.startNotifications();
+      txChar.addEventListener("characteristicvaluechanged", handleIncomingData);
+      await txChar.startNotifications();
     } catch (err) {
       console.error("Failed to start IMU:", err);
     }
   };
 
   const stopIMU = async () => {
-    if (!txCharacteristic) return;
+    const txChar = txCharacteristicRef.current;
+    if (!txChar) return;
     try {
       await sendCommand("B");
       // Remove the handler and stop notifications if possible.
-      try { txCharacteristic.removeEventListener("characteristicvaluechanged", handleIncomingData); } catch (e) {}
-      await txCharacteristic.stopNotifications();
+      try { txChar.removeEventListener("characteristicvaluechanged", handleIncomingData); } catch (e) {}
+      await txChar.stopNotifications();
     } catch (err) {
       console.error("Failed to stop IMU:", err);
     }
@@ -508,56 +574,66 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const sendCommand = async (...args: (string | number)[]) => {
-    if (!rxCharacteristic) {
-      console.error("RX characteristic not found");
-      return;
+    // Use the ref — always reflects the latest characteristic even right after reconnectGATT()
+    const rxChar = rxCharacteristicRef.current;
+    if (!rxChar) {
+      throw new Error("RX characteristic not found");
     }
 
     const commandBytes = new Uint8Array(
       args.flatMap(arg => typeof arg === "number" ? [arg & 0xff] : String(arg).split("").map(c => c.charCodeAt(0)))
     );
 
-    try {
-      await rxCharacteristic.writeValue(commandBytes);
-    } catch (err) {
-      console.error("Failed to send command:", err);
+    // Use writeValueWithoutResponse — fast, no ACK wait.
+    // NUS RX characteristic is "write without response" by spec.
+    const char = rxChar as any;
+    if (typeof char.writeValueWithoutResponse === "function") {
+      await char.writeValueWithoutResponse(commandBytes);
+    } else {
+      await rxChar.writeValue(commandBytes);
     }
   };
 
   const stimulate = async (electrode1: number, electrode2: number, amplitude: number, runStop: boolean) => {
-    // Validate inputs
+    // Validate inputs (electrodes are 1-based in firmware: 1-32)
     if (electrode1 < 0 || electrode1 > 31 || electrode2 < 0 || electrode2 > 31) {
       console.error("Electrode numbers must be between 0 and 31");
       return;
     }
-    if (amplitude < 0 || amplitude > 120) {
-      console.error("Amplitude must be between 0 and 120 mA");
+    if (amplitude < 0 || amplitude > 255) {
+      console.error("Amplitude must be between 0 and 255");
       return;
     }
 
-    // Convert electrode numbers to ASCII digits
-    // Device expects: UART2_Read() - '0', so we send ASCII characters '0' to '9' for electrodes 0-9
-    // For electrodes 10-31, we use characters beyond '9' (e.g., ':' for 10, ';' for 11, etc.)
-    const toAsciiDigit = (n: number) => String.fromCharCode(0x30 + n); // '0' + n
-    
-    // Build 8 electrode bytes (repeat electrode pair 4 times)
-    const e1 = toAsciiDigit(electrode1);
-    const e2 = toAsciiDigit(electrode2);
-    const electrodes = e1 + e2 + e1 + e2 + e1 + e2 + e1 + e2;
-    
-    // Amplitude as 2 ASCII decimal digits (e.g., 50 -> '5' '0')
-    // GetPacketBinASCII() reads 2 bytes and converts: (byte1 - '0') * 10 + (byte2 - '0')
-    const ampStr = amplitude.toString().padStart(2, '0'); // e.g., "50" or "05"
-    
-    // Run/Stop: ASCII digit '0' or '1'
-    // Device reads: UART2_Read() - '0', so we send '0' (0x30) or '1' (0x31)
-    const runStopChar = runStop ? '1' : '0';
-    
-    // Send command: 'E' + 8 electrode ASCII chars + 2 amplitude ASCII digits + 1 runStop ASCII digit
-    // Total: 1 + 8 + 2 + 1 = 12 bytes
-    await sendCommand('E' + electrodes + ampStr + runStopChar);
-    
-    console.log(`Stimulation command sent: E${electrodes}${ampStr}${runStopChar} (Electrodes: ${electrode1},${electrode2} | Amplitude: ${amplitude}mA | ${runStop ? 'Go' : 'Stop'})`);
+    // Firmware 'e' command – 6 raw binary bytes:
+    //   Byte 0: 'e'           (0x65)
+    //   Byte 1: amplitude     (raw 0-255)
+    //   Byte 2: electrode1    (raw 1-32)
+    //   Byte 3: electrode2    (raw 1-32)
+    //   Byte 4: go            (0 = stop, 1 = start)
+    //   Byte 5: superElectrode (0)
+    const go = runStop ? 1 : 0;
+    const amp = runStop ? (amplitude & 0xff) : 0;
+    const packet = new Uint8Array([
+      0x65,                   // 'e'
+      amp,                    // amplitude as raw byte
+      electrode1 & 0xff,      // electrode1 as raw byte
+      electrode2 & 0xff,      // electrode2 as raw byte
+      go,                     // go flag
+      0x00                    // superElectrode = 0
+    ]);
+
+    // Write to RX characteristic (device's RX = we write to it), same as sendCommand.
+    // Use writeValue (with response/ACK) for reliable delivery — stimulation
+    // commands are critical and must not be silently dropped.
+    const rx = rxCharacteristicRef?.current;
+    if (!rx) {
+      console.error("stimulate: RX characteristic not available");
+      return;
+    }
+    await rx.writeValue(packet);
+
+    console.log(`Stimulation sent (raw): [${Array.from(packet).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}] | E1=${electrode1} E2=${electrode2} Amp=${amp} Go=${go}`);
   };
 
   const initializeImpedance = async (electrodes: number[]) => {
@@ -692,6 +768,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     <BluetoothContext.Provider value={{
       connect,
       disconnect,
+      reconnectGATT,
       isConnected,
       sendCommand,
       stimulate,
