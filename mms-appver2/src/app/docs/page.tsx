@@ -23,6 +23,7 @@ const DocsPage: React.FC = () => {
           <li>d. Default time-binning/averaging of incoming samples (configurable BIN_MS; 0 if it is not required).</li>
           <li>e. Start/stop recording of the (binned) samples and download them as CSV, with parameter snapshots and markers included.</li>
           <li>f. Pause/resume recording. After recording started, the process can be paused and resumed, with the paused data will be discarded.</li>
+          <li>g. Search Algorithm page: automatically test all electrode pair combinations to find the best motor points for NMES stimulation.</li>
         </ul>
       </section>
 
@@ -176,16 +177,136 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
       </section>
 
       <section style={{ marginTop: 20 }}>
-        <h2><b>8. Where to make changes (quick pointers)</b></h2>
+        <h2><b>8. Search Algorithm — Finding the best electrode pair</b></h2>
+        <p>
+          The Search Algorithm page (<code>/search</code>) automatically tests every possible
+          pair of electrodes to find which two produce the strongest muscle response.
+          Think of it as a systematic trial-and-error process: the app sends a small
+          electrical pulse through one pair at a time and measures how much the muscle moves
+          using the motion sensors (IMU).
+        </p>
+
+        <h3 style={{ marginTop: 16 }}>How it works (Regular Search)</h3>
+        <ol>
+          <li>
+            <strong>You choose the settings</strong> — minimum and maximum stimulation strength
+            (amplitude in mA), a delay time (how long each pulse lasts), and how many
+            electrodes are connected.
+          </li>
+          <li>
+            <strong>The app calculates all possible pairs</strong> — for example, with 9
+            electrodes there are 36 unique pairs (1-2, 1-3, … 8-9). Each pair is tested at
+            every amplitude in the range you set.
+          </li>
+          <li>
+            <strong>For each pair, the app</strong>:
+            <ol type="a" style={{ marginTop: 4, marginLeft: 16 }}>
+              <li>Clears any old sensor data</li>
+              <li>Sends a &quot;start stimulation&quot; command to the device</li>
+              <li>Waits for the delay period while the sensors record muscle movement</li>
+              <li>Sends a &quot;stop stimulation&quot; command</li>
+              <li>Looks at the sensor readings and calculates an <em>effectiveness score</em>
+                (how much the sensor values deviated from rest — bigger = stronger response)</li>
+            </ol>
+          </li>
+          <li>
+            <strong>At the end</strong>, the app shows which pair produced the highest
+            effectiveness score, along with the amplitude that worked best. This is the
+            recommended motor point.
+          </li>
+        </ol>
+
+        <h3 style={{ marginTop: 16 }}>Stimulation command format</h3>
+        <p>
+          The device uses a 6-byte binary command for stimulation (the <code>e</code> command):
+        </p>
+        <table style={{ borderCollapse: 'collapse', marginTop: 8, fontSize: 14 }}>
+          <thead>
+            <tr style={{ background: '#f0f0f0' }}>
+              <th style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Byte</th>
+              <th style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Meaning</th>
+              <th style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Range</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>0</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Command character</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>&apos;e&apos; (0x65)</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>1</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Amplitude (raw byte)</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>0–255</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>2</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Electrode 1 (anode)</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>1–32 (raw byte, not ASCII)</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>3</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Electrode 2 (cathode)</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>1–32 (raw byte, not ASCII)</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>4</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Go flag</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>0 = stop, 1 = start</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>5</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Super-electrode flag</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>0 (regular) or 1</td></tr>
+          </tbody>
+        </table>
+        <p style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
+          <strong>Important:</strong> electrode numbers and amplitude are sent as raw binary
+          bytes, <em>not</em> as ASCII text. For example, electrode 10 is sent as byte value
+          0x0A, not the characters &quot;1&quot; and &quot;0&quot;.
+        </p>
+
+        <h3 style={{ marginTop: 16 }}>Firmware reset (every 25 pairs)</h3>
+        <p>
+          The device firmware has an internal limit and stops responding to stimulation
+          commands after approximately 36 consecutive pairs. To work around this, the search
+          automatically performs a reset every 25 pairs:
+        </p>
+        <ol>
+          <li>Sends a stop-stimulation command (all zeros)</li>
+          <li>Stops the motion sensors</li>
+          <li>Sends the <code>N</code> command to reset the firmware</li>
+          <li>Waits 500 ms for the device to settle</li>
+          <li>Restarts the motion sensors and continues testing</li>
+        </ol>
+
+        <h3 style={{ marginTop: 16 }}>Effectiveness score</h3>
+        <p>
+          The effectiveness score is the <em>mean squared deviation from idle</em>. In simple
+          terms: the app looks at all the sensor readings collected during a pulse and measures
+          how far each reading is from the resting value. Larger deviations = the muscle moved
+          more = better electrode placement. Both sensors are averaged together.
+        </p>
+
+        <h3 style={{ marginTop: 16 }}>Safety features</h3>
+        <ul>
+          <li><strong>Stop button:</strong> immediately stops stimulation and sensors at any time.</li>
+          <li><strong>Abortable pauses:</strong> the delay between start and stop checks every 100 ms
+            whether the user pressed Stop, so it reacts quickly.</li>
+          <li><strong>Disconnect detection:</strong> if the Bluetooth connection drops mid-search,
+            the algorithm stops automatically.</li>
+          <li><strong>Emergency stop:</strong> on any error, the app sends a stop-stimulation command
+            followed by a sensor-stop command.</li>
+        </ul>
+
+        <h3 style={{ marginTop: 16 }}>Superelectrode tab</h3>
+        <p>
+          The Superelectrode tab is a placeholder for a future search mode that tests
+          super-electrode configurations (multiple electrodes activated together). This is not
+          yet implemented.
+        </p>
+
+        <h3 style={{ marginTop: 16 }}>UI overview</h3>
+        <ul>
+          <li><strong>Parameters panel:</strong> set amplitude range, delay, and electrode count.</li>
+          <li><strong>Progress bar:</strong> shows how many pairs have been tested out of the total.</li>
+          <li><strong>Live status:</strong> shows which electrode pair is currently being stimulated and at what amplitude.</li>
+          <li><strong>Log panel:</strong> scrollable real-time log of every test step, including effectiveness scores.</li>
+          <li><strong>Best result card:</strong> after the search completes, shows the winning electrode pair, its amplitude, and effectiveness score.</li>
+          <li><strong>Battery indicator:</strong> click to check device battery level.</li>
+        </ul>
+      </section>
+
+      <section style={{ marginTop: 20 }}>
+        <h2><b>9. Where to make changes (quick pointers)</b></h2>
         <ul>
           <li><code>src/app/BluetoothContext.tsx</code> — Bluetooth connection, parsing, per-sample timestamps.</li>
           <li><code>src/app/NMESControl.tsx</code> — UI polling, binning/averaging, charting, recording and CSV export.</li>
+          <li><code>src/app/search/SearchAlgorithm.tsx</code> — Search Algorithm page: electrode pair search loop, firmware reset logic, effectiveness calculation, and UI.</li>
+          <li><code>src/app/search/SearchAlgorithm.module.css</code> — Styling for the Search Algorithm page.</li>
         </ul>
       </section>
 
       <div style={{ height: 28 }} />
       <div style={{ fontSize: 13, color: '#666' }}>
-        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 6 Nov 2025.
+        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 25 Feb 2026.
       </div>
     </div>
   );
