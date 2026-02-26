@@ -113,21 +113,44 @@ const DocsPage: React.FC = () => {
 
       <section style={{ marginTop: 20 }}>
         <h2><b>5. What is saved to CSV (recording format)</b></h2>
+
+        <h3 style={{ marginTop: 16 }}>5a. Sensor recording CSV</h3>
         <p>
-          When recording is active the UI stores the binned/averaged points in a recording buffer. The CSV file produced by the Save action has the following structure:
+          When recording is active the UI stores raw (pre-binning) samples in a recording buffer.
+          The CSV file produced by the <em>Save Sensor Recording</em> button has the following structure:
         </p>
         <ul>
-          <li>a. Filename: taken from patientName, sensorName, and timestamps.</li>  
-          <li>b. Header row: <code>time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pvv3,patientName,sensorName</code></li>
-          <li>c. Rows: one row per recorded time point (the union of sensor1 and sensor2 times). If a sensor lacks a value at a time point the cell is left empty.</li>
-          <li>d. Parameter snapshots: the code records parameter snapshots (frequency, motorPoints, position, PVVs, etc.) at times when the user applies them. For each CSV row the snapshot whose time is the latest ≤ row time is used to populate parameter columns.</li>
-          <li>e. Markers: after the main CSV rows a small markers section is appended containing any start/stop markers recorded during the session. When you press the <em>Start Recording</em> button the app records a <code>{'{'} type: 'start' {'}'}</code> marker at the current chart time; when you press <em>Stop Recording</em> it appends a matching <code>{'{'} type: 'stop' {'}'}</code> marker. These markers are included in the CSV so you can easily align recordings to events in post-processing.</li>
+          <li>a. <strong>Filename</strong>: <code>mms_&lt;patientName&gt;_&lt;sensorName&gt;_&lt;UTC+1 timestamp&gt;.csv</code>. Special characters are sanitized and spaces replaced with underscores.</li>
+          <li>b. <strong>Header row</strong>: <code>relative_time_s,sensor1,sensor2,frequency,amplitude,electrode1,electrode2,patientName,sensorName</code></li>
+          <li>c. <strong>Rows</strong>: one row per recorded time point (the union of sensor1 and sensor2 times). If a sensor lacks a value at a time point the cell is left empty.</li>
+          <li>d. <strong>Time column</strong>: <code>relative_time_s</code> is the time in seconds relative to the session start (first sample timestamp from <code>performance.now()</code>). No software absolute/wall-clock timestamps are written.</li>
+          <li>e. <strong>Parameter snapshots</strong>: the code records parameter snapshots (frequency, amplitude, electrode1, electrode2) at times when the user presses <em>Input Parameters</em>. For each CSV row the snapshot whose time is the latest &le; row time is used to populate parameter columns. If no snapshot was recorded before a row, current UI values are used as fallback.</li>
+          <li>f. <strong>Markers</strong>: after the main CSV rows a small markers section is appended containing start/stop/pause/resume markers recorded during the session. Format: <code># Markers:type,type,relative_time_s</code>.</li>
+          <li>g. <strong>Save validation</strong>: both Patient Name and Sensor Name must be filled in, and there must be recorded sensor data, before the save button is enabled.</li>
         </ul>
 
         <div style={{ marginTop: 8, padding: 12, background: '#fff8e1', borderRadius: 6 }}>
-          <strong>Example header:</strong>
+          <strong>Current header:</strong>
           <pre style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>
-time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pvv3,patientName,sensorName
+relative_time_s,sensor1,sensor2,frequency,amplitude,electrode1,electrode2,patientName,sensorName
+          </pre>
+        </div>
+
+        <h3 style={{ marginTop: 16 }}>5b. Impedance CSV</h3>
+        <p>
+          Impedance measurements are saved separately via the <em>Save Impedance Data</em> button.
+        </p>
+        <ul>
+          <li>a. <strong>Filename</strong>: <code>mms_impedance_&lt;patientName&gt;_&lt;sensorName&gt;_&lt;UTC+1 timestamp&gt;.csv</code></li>
+          <li>b. <strong>Header row</strong>: <code>electrode1,electrode2,impedance</code></li>
+          <li>c. <strong>Rows</strong>: each line from the device&apos;s <code>g</code> / <code>h</code> command response is written as-is. The device typically sends three comma-separated fields per line (e.g. <code>30900,2040,2040</code>). Marker lines <code>IMP</code> and <code>STR</code> are also preserved.</li>
+          <li>d. <strong>Footer note</strong>: the CSV includes a comment noting that device timestamps are in ticks (50&nbsp;&micro;s per tick).</li>
+        </ul>
+
+        <div style={{ marginTop: 8, padding: 12, background: '#fff8e1', borderRadius: 6 }}>
+          <strong>Example impedance header:</strong>
+          <pre style={{ whiteSpace: 'pre-wrap', marginTop: 8 }}>
+electrode1,electrode2,impedance
           </pre>
         </div>
       </section>
@@ -169,16 +192,70 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
       </section>
 
       <section style={{ marginTop: 20 }}>
-        <h2><b>7. Troubleshooting & diagnostic tips</b></h2>
+        <h2><b>7. Impedance Reading</b></h2>
+        <p>
+          The Impedance Measurement panel (on the main sensor page) lets you measure contact
+          impedance across electrodes while the device is connected. This helps verify good
+          electrode-skin contact before starting stimulation.
+        </p>
+
+        <h3 style={{ marginTop: 16 }}>Basic impedance workflow</h3>
+        <ol>
+          <li><strong>Initialize (9e)</strong> — sends the <code>G</code> command with electrodes 0–8 to the device. The device responds with <code>G-ok</code>. The <code>G</code> command is a 17-byte ASCII packet: <code>&apos;G&apos;</code> followed by 16 electrode characters (e.g. <code>G012345678PPPPPPP</code>). Each electrode is encoded as <code>0x30 + electrode number</code>; unused slots are filled with <code>&apos;P&apos;</code>.</li>
+          <li><strong>Measure Impedance</strong> — sends the <code>g</code> command to trigger a contact scan. The device streams impedance data back as newline-delimited text. Data is accumulated in a buffer and parsed line-by-line: lines matching <code>IMP</code> or <code>STR</code> are kept as markers, and lines with 3–4 comma-separated numeric fields are stored as measurement rows.</li>
+          <li><strong>View results</strong> — impedance data entries appear in a live scrollable list below the measurement buttons, along with a count of total measurements.</li>
+          <li><strong>Save</strong> — press <em>Save Impedance Data</em> in the save panel (requires Patient Name and Sensor Name). See Section 5b for CSV format details.</li>
+        </ol>
+
+        <h3 style={{ marginTop: 16 }}>Continuous measurement (impedance during stimulation)</h3>
+        <p>
+          The <em>Start Continuous Measurement</em> feature measures impedance while the device
+          is actively stimulating. It uses a fixed sequence of device commands:
+        </p>
+        <ol>
+          <li>Send <code>G012345678PPPPPPP</code> (initialize 9 electrodes) → wait for <code>G-ok</code></li>
+          <li>Send <code>g</code> (measure impedance) → wait for data + configurable delay</li>
+          <li>Send <code>L</code> command with stimulation pair, impedance pair, and amplitude → wait for <code>L-ok</code></li>
+          <li>Send <code>h</code> (get impedance results during stimulation) → wait for data + delay</li>
+          <li>Send <code>G</code> again → <code>g</code> again (final measurement after stimulation stops)</li>
+        </ol>
+
+        <h4 style={{ marginTop: 12 }}>&apos;L&apos; command format</h4>
+        <p>
+          The <code>L</code> command configures stimulation and impedance measurement
+          simultaneously: <code>LXXYYZZ</code> where:
+        </p>
         <ul>
-          <li>a. If the chart looks flat or values are all zeros: verify the device is charged (sufficiently) and is sending notifications. Otherwise, check the connections.</li>
-          <li>b. To inspect raw per-notification samples, set <code>BIN_MS = 0</code> and enable logging in <code>BluetoothContext.handleIMUData</code> (set <code>VERBOSE_LOGGING = true</code> temporarily). You can also add a small dev overlay to show <code>rawQueueRef.current.length</code> and <code>pairsRef.current.length</code> to observe backlog while reproducing bursts.</li>
-          <li>c. CSV missing parameters: ensure you pressed <em>Input Parameters</em> (it records snapshots) before starting a recording, otherwise the latest UI values will be used as fallback.</li>
+          <li><code>XX</code> — 2-digit stimulation electrode pair (zero-indexed, e.g. &quot;01&quot; for electrodes 1-2)</li>
+          <li><code>YY</code> — 2-digit impedance electrode pair (zero-indexed)</li>
+          <li><code>ZZ</code> — 2-digit amplitude (e.g. &quot;10&quot; for 10 mA)</li>
+        </ul>
+        <p style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
+          <strong>Note:</strong> electrode numbers in the L command are zero-indexed — the UI
+          subtracts 1 from the user-facing 1-based numbers before sending.
+        </p>
+
+        <h4 style={{ marginTop: 12 }}>UI controls</h4>
+        <ul>
+          <li><strong>Stim Pair:</strong> which electrode pair to stimulate (e.g. &quot;12&quot; for electrodes 1 and 2, or &quot;1-2&quot;)</li>
+          <li><strong>Imp Pair:</strong> which electrode pair to measure impedance across</li>
+          <li><strong>Amplitude (mA):</strong> stimulation amplitude during the measurement (0–120)</li>
+          <li><strong>Delay (s):</strong> wait time between command steps (minimum 3 s for device data transmission)</li>
         </ul>
       </section>
 
       <section style={{ marginTop: 20 }}>
-        <h2><b>8. Search Algorithm — Finding the best electrode pair</b></h2>
+        <h2><b>8. Troubleshooting & diagnostic tips</b></h2>
+        <ul>
+          <li>a. If the chart looks flat or values are all zeros: verify the device is charged (sufficiently) and is sending notifications. Otherwise, check the connections.</li>
+          <li>b. To inspect raw per-notification samples, set <code>BIN_MS = 0</code> and enable logging in <code>BluetoothContext.handleIMUData</code> (set <code>VERBOSE_LOGGING = true</code> temporarily). You can also add a small dev overlay to show <code>rawQueueRef.current.length</code> and <code>pairsRef.current.length</code> to observe backlog while reproducing bursts.</li>
+          <li>c. CSV missing parameters: ensure you pressed <em>Input Parameters</em> (it records snapshots) before starting a recording, otherwise the latest UI values will be used as fallback.</li>
+          <li>d. Impedance data empty: ensure you pressed <em>Initialize (9e)</em> first and received <code>G-ok</code> before measuring. If the buffer becomes too large it is automatically trimmed to the most recent 4 KB.</li>
+        </ul>
+      </section>
+
+      <section style={{ marginTop: 20 }}>
+        <h2><b>9. Search Algorithm — Finding the best electrode pair</b></h2>
         <p>
           The Search Algorithm page (<code>/search</code>) automatically tests every possible
           pair of electrodes to find which two produce the strongest muscle response.
@@ -354,7 +431,7 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
       </section>
 
       <section style={{ marginTop: 20 }}>
-        <h2><b>9. Where to make changes (quick pointers)</b></h2>
+        <h2><b>10. Where to make changes (quick pointers)</b></h2>
         <ul>
           <li><code>src/app/BluetoothContext.tsx</code> — Bluetooth connection, parsing, per-sample timestamps.</li>
           <li><code>src/app/NMESControl.tsx</code> — UI polling, binning/averaging, charting, recording and CSV export.</li>
