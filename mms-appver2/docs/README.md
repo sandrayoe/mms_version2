@@ -9,6 +9,7 @@ How to use
 Changelog
 
 ## Unreleased
+- 2026-02-26 — Documented the Superelectrode Search algorithm ('F' command): grouped anode (electrodes 1–3), cathode sweep from 4–N, ASCII packet format.
 - 2025-10-28 — Added `/docs` route and starter documentation page.
 
 ## 2025-10-26

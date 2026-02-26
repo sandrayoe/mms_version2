@@ -24,6 +24,7 @@ const DocsPage: React.FC = () => {
           <li>e. Start/stop recording of the (binned) samples and download them as CSV, with parameter snapshots and markers included.</li>
           <li>f. Pause/resume recording. After recording started, the process can be paused and resumed, with the paused data will be discarded.</li>
           <li>g. Search Algorithm page: automatically test all electrode pair combinations to find the best motor points for NMES stimulation.</li>
+          <li>h. Superelectrode Search: groups electrodes 1–3 as a single positive pole and scans individual cathode electrodes using the firmware &apos;F&apos; command.</li>
         </ul>
       </section>
 
@@ -276,11 +277,69 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
             followed by a sensor-stop command.</li>
         </ul>
 
-        <h3 style={{ marginTop: 16 }}>Superelectrode tab</h3>
+        <h3 style={{ marginTop: 16 }}>Superelectrode Search</h3>
         <p>
-          The Superelectrode tab is a placeholder for a future search mode that tests
-          super-electrode configurations (multiple electrodes activated together). This is not
-          yet implemented.
+          The Superelectrode tab implements a second search mode where electrodes 1–3 are
+          grouped together as a single large positive pole (displayed as &quot;A&quot; in the
+          UI and results). A single cathode electrode is then swept from electrode 4 up to
+          the total electrode count. This reduces the search space significantly compared to
+          the regular pairwise search.
+        </p>
+
+        <h4 style={{ marginTop: 12 }}>How it works</h4>
+        <ol>
+          <li>
+            <strong>Grouped anode</strong> — electrodes 1, 2, and 3 are activated together
+            as one combined positive pole. The user does not select these individually.
+          </li>
+          <li>
+            <strong>Cathode sweep</strong> — the algorithm loops through each cathode
+            electrode from 4 to <em>N</em> (the total electrode count set in Parameters)
+            at every amplitude in the configured range.
+          </li>
+          <li>
+            <strong>For each cathode electrode</strong>, the same sensor-based test cycle
+            is performed as in the regular search: clear sensors → start stimulation → wait
+            (delay) → stop stimulation → calculate effectiveness score.
+          </li>
+          <li>
+            <strong>At the end</strong>, the best cathode electrode is reported along with
+            the amplitude that produced the highest effectiveness score.
+          </li>
+        </ol>
+
+        <h4 style={{ marginTop: 12 }}>Superelectrode command format (&apos;F&apos; command)</h4>
+        <p>
+          The superelectrode mode uses the <code>F</code> command instead of the binary
+          <code>e</code> command. Unlike the regular command, the &apos;F&apos; packet is
+          sent as ASCII text:
+        </p>
+        <table style={{ borderCollapse: 'collapse', marginTop: 8, fontSize: 14 }}>
+          <thead>
+            <tr style={{ background: '#f0f0f0' }}>
+              <th style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Position</th>
+              <th style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Content</th>
+              <th style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Format</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>0</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Command character</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>&apos;F&apos;</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>1–2</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Cathode electrode number</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>2-digit zero-padded decimal (e.g. &quot;04&quot;, &quot;09&quot;)</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>3–4</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Amplitude</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>2-char uppercase hex-ASCII (e.g. &quot;0A&quot; = 10 mA)</td></tr>
+            <tr><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>5</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>Go / stop flag</td><td style={{ border: '1px solid #ccc', padding: '4px 10px' }}>&apos;1&apos; = start, &apos;0&apos; = stop</td></tr>
+          </tbody>
+        </table>
+        <p style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
+          <strong>Example:</strong> <code>F040A1</code> starts stimulation on cathode electrode 4
+          at 10 mA. <code>F040A0</code> stops it. Note: unlike the regular &apos;e&apos; command,
+          the &apos;F&apos; command uses ASCII-encoded values, not raw binary bytes.
+        </p>
+
+        <h4 style={{ marginTop: 12 }}>Combination count</h4>
+        <p>
+          Total combinations = (total electrodes − 3) × amplitude steps. For example, with
+          9 electrodes and amplitude 10–15 mA: (9 − 3) × 6 = 36 tests — much fewer than the
+          regular search&apos;s 36 pairs × 6 amplitudes = 216.
         </p>
 
         <h3 style={{ marginTop: 16 }}>UI overview</h3>
@@ -306,7 +365,7 @@ time,sensor1,sensor2,frequency,level,intensity,motorPoints,position,pvv1,pvv2,pv
 
       <div style={{ height: 28 }} />
       <div style={{ fontSize: 13, color: '#666' }}>
-        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 25 Feb 2026.
+        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 26 Feb 2026.
       </div>
     </div>
   );
