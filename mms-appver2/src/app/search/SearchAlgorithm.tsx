@@ -12,7 +12,7 @@ interface LogEntry {
 }
 
 interface SearchResult {
-  electrode1: number;
+  electrode1: number | string;
   electrode2: number;
   amplitude: number;
   sensorAvg1: number;
@@ -477,9 +477,9 @@ const SearchAlgorithm: React.FC = () => {
           tested++;
           setElectrodesTested(tested);
 
-          setCurrentStimPair({ e1: 1, e2: elec }); // display: grouped anode shown as 1
+          setCurrentStimPair({ e1: 0, e2: elec }); // display: grouped anode shown as A
           setCurrentAmplitude(amp);
-          addLog(`[${tested}/${total}] Superelectrode (1-3) → ${elec} at ${amp} mA`);
+          addLog(`[${tested}/${total}] Superelectrode (A) → ${elec} at ${amp} mA`);
 
           try {
             // 1. Clear previous sensor data
@@ -513,7 +513,7 @@ const SearchAlgorithm: React.FC = () => {
 
             // 7. Record result
             const result: SearchResult = {
-              electrode1: 1, // grouped anode (1-3)
+              electrode1: "A", // grouped anode (1-3)
               electrode2: elec,
               amplitude: amp,
               sensorAvg1: parseFloat(avg1.toFixed(2)),
@@ -566,7 +566,7 @@ const SearchAlgorithm: React.FC = () => {
         const secs = Math.floor((elapsedMs % 60000) / 1000);
         const duration = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
         const bestResult: SearchResult = {
-          electrode1: 1,
+          electrode1: "A",
           electrode2: best.electrode,
           amplitude: best.atAmplitude,
           sensorAvg1: parseFloat(best.avg1.toFixed(2)),
@@ -576,7 +576,7 @@ const SearchAlgorithm: React.FC = () => {
           timestamp: duration,
         };
         setBestResult(bestResult);
-        addLog(`✓ Best electrode: (1-3) → ${best.electrode} at ${best.atAmplitude} mA (effectiveness: ${best.effectiveness.toFixed(2)}) — completed in ${duration}`);
+        addLog(`✓ Best electrode: (A) → ${best.electrode} at ${best.atAmplitude} mA (effectiveness: ${best.effectiveness.toFixed(2)}) — completed in ${duration}`);
       }
 
       addLog("Superelectrode Search completed.");
@@ -742,7 +742,7 @@ const SearchAlgorithm: React.FC = () => {
           <span>{isRunning ? "Running..." : "Idle"}</span>
           {currentStimPair && (
             <span style={{ marginLeft: 16, fontWeight: 600 }}>
-              Stimulating: Electrode {currentStimPair.e1} – {currentStimPair.e2}
+              Stimulating: Electrode {currentStimPair.e1 === 0 ? "A" : currentStimPair.e1} – {currentStimPair.e2}
               {currentAmplitude !== null && ` at ${currentAmplitude} mA`}
             </span>
           )}
