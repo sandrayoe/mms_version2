@@ -60,7 +60,9 @@ const linkStyle: React.CSSProperties = {
   color: "#ccc",
   textDecoration: "none",
   padding: "4px 0",
-  borderBottom: "2px solid transparent",
+  borderBottomWidth: "2px",
+  borderBottomStyle: "solid",
+  borderBottomColor: "transparent",
   transition: "color 0.2s, border-color 0.2s",
 };
 
