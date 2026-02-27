@@ -554,8 +554,8 @@ const SearchAlgorithm: React.FC = () => {
         if (!isRunningRef.current) break;
 
         // Post-stimulation listening period: collect sensor data after all electrodes have been stimulated
-        addLog(`  Listening for 200 ms after stimulation at ${amp} mA…`);
-        await delayMs(500);
+        addLog(`  Listening for 300 ms after stimulation at ${amp} mA…`);
+        await delayMs(300);
 
         // After stimulating all electrodes at this amplitude, analyze combined sensor data
         const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
