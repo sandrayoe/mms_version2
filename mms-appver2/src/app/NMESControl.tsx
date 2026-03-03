@@ -464,8 +464,8 @@ const SensorPanel: React.FC = () => {
     
     const newState = !isStimulating;
     setIsStimulating(newState);
-    // Subtract 1 from electrode numbers: user input 1-32 maps to device 0-31
-    await stimulate(e1 - 1, e2 - 1, amp, newState);
+    // Electrode numbers are 1-based, matching firmware expectation (1-32)
+    await stimulate(e1, e2, amp, newState);
   };
 
   const handleInitializeImpedance = async () => {
@@ -970,7 +970,7 @@ const SensorPanel: React.FC = () => {
                 </button>
               </div>
               <div style={{ fontSize: '12px', color: '#666' }}>
-                Command: E{electrode1}{electrode2}{electrode1}{electrode2}{electrode1}{electrode2}{electrode1}{electrode2}{String(amplitude).padStart(2, '0')}{isStimulating ? '1' : '0'}
+                Command: e [amp={amplitude}] [e1={electrode1}] [e2={electrode2}] [go={isStimulating ? '1' : '0'}] [super=0]
               </div>
             </div>
 
