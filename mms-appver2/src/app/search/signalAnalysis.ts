@@ -9,7 +9,7 @@
 // ─── Constants ───
 
 const SAMPLING_RATE = 50; // Hz (matches firmware IMU output rate)
-const CUTOFF_FREQUENCY = 5; // Hz — muscle contractions are typically below 5 Hz
+const CUTOFF_FREQUENCY = 3; // Hz — muscle contractions (0.5–3 Hz), avoids aliased stim frequencies
 const ACTIVATION_THRESHOLD = 10; // Low-freq power threshold for muscle activation
 
 // ─── Basic statistics ───

@@ -45,6 +45,7 @@ const SearchAlgorithm: React.FC = () => {
     sendCommand,
     lastResponse,
     stimulate,
+    reconnectGATT,
     startIMU,
     stopIMU,
     clearIMU,
@@ -89,7 +90,7 @@ const SearchAlgorithm: React.FC = () => {
   const [numElectrodes, setNumElectrodes] = useState<string>("9");
 
   // Superelectrode Phase 1 threshold (raw sensor effectiveness value)
-  const [sensorThreshold, setSensorThreshold] = useState<string>("50");
+  const [sensorThreshold, setSensorThreshold] = useState<string>("20");
 
   // Superelectrode phase tracking
   const [superPhase, setSuperPhase] = useState<1 | 2 | null>(null);
@@ -159,6 +160,37 @@ const SearchAlgorithm: React.FC = () => {
   );
 
   const delayMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Retry wrapper for BLE write operations that may fail with GATT errors.
+   *  On first failure: reconnect GATT immediately, then retry.
+   *  Retries up to `maxRetries` times. */
+  const retryBLE = async <T,>(fn: () => Promise<T>, label: string, maxRetries = 3): Promise<T> => {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        const isGATT = /gatt|network|write|characteristic/i.test(msg);
+        if (attempt < maxRetries - 1 && isGATT) {
+          console.warn(`BLE retry ${attempt + 1}/${maxRetries} for ${label}: ${msg}`);
+          // Reconnect GATT immediately on any failure — the queue is likely saturated
+          try {
+            await reconnectGATT();
+            await delayMs(400);
+            clearIMU();
+            await startIMU();
+            await delayMs(200);
+          } catch {
+            // If reconnect fails, wait longer before next attempt
+            await delayMs(1000);
+          }
+        } else {
+          throw err;
+        }
+      }
+    }
+    throw new Error(`BLE ${label} failed after ${maxRetries} retries`);
+  };
 
   /** Emergency stop: stop stimulation via raw binary 'e' packet, then stop sensors. */
   const emergencyStop = async () => {
@@ -275,21 +307,33 @@ const SearchAlgorithm: React.FC = () => {
             addLog(`[${tested}/${total}] Pair ${anode}-${cathode} at ${amp} mA`);
 
             try {
-              // 1. Clear previous sensor data before each pair
+              // 1. Clear previous sensor data before each pair.
+              //    Clear both React state AND the ref, then wait for any
+              //    in-flight BLE notifications to flush so we don't capture
+              //    residual data from the previous stimulation.
+              clearIMU();
+              await delayMs(150);
+              // Double-clear: discard anything that arrived during the settle window
               clearIMU();
               await delayMs(50);
 
               // 2. Start stimulation (electrodes are 1-based, matching firmware)
-              await stimulate(anode, cathode, amp, true);
+              await retryBLE(() => stimulate(anode, cathode, amp, true), `stim-on ${anode}-${cathode}`);
 
               // 3. Collect data during the configured delay (abortable pause-node)
               await pauseNode(delayS);
 
-              // 4. Stop stimulation (set amplitude to 0 and runStop to 0, matching reference)
-              await stimulate(anode, cathode, amp, false);
-              await delayMs(200); // let trailing data arrive
+              // 4. Stop stimulation
+              await retryBLE(() => stimulate(anode, cathode, amp, false), `stim-off ${anode}-${cathode}`);
 
-              // 5. Analyze sensor data — DFT-based low-frequency power analysis
+              // 5. Flush sensor data from during stimulation (removes proximity artifacts)
+              clearIMU();
+              await delayMs(50);
+
+              // 6. Post-stimulation listening: capture only genuine muscle response
+              await delayMs(400);
+
+              // 7. Analyze sensor data — only post-stim data (no stim artifacts)
               const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
               const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
               const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
@@ -360,29 +404,40 @@ const SearchAlgorithm: React.FC = () => {
             setCurrentStimPair(null);
             setCurrentAmplitude(null);
 
-            // Every 25 pairs, stop stimulation + send 'N' + cycle IMU to reset
-            // the firmware's internal state (it stops responding after ~36 pairs).
-            if (tested > 0 && tested % 25 === 0 && isRunningRef.current) {
-              addLog(`⟳ Firmware reset after ${tested} pairs…`);
+            // Every 15 pairs, reconnect GATT first, then reset firmware.
+            // GATT reconnect must happen BEFORE any BLE writes (the queue is saturated).
+            if (tested > 0 && tested % 15 === 0 && isRunningRef.current) {
+              addLog(`⟳ GATT reconnect + firmware reset after ${tested} pairs…`);
               try {
-                // Explicit stop stimulation first
-                await stimulate(0, 0, 0, false);
-                await delayMs(100);
-                await stopIMU();
-                await delayMs(200);
-                await sendCommand("N");
+                // 1. Reconnect GATT first — flushes Chrome's BLE write queue
+                await reconnectGATT();
+                await delayMs(400);
+                // 2. Now send commands on the fresh connection
+                await sendCommand("N");  // firmware reset
                 await delayMs(500);
                 clearIMU();
                 await startIMU();
                 await delayMs(300);
                 addLog(`⟳ Reset complete — continuing search.`);
               } catch (resetErr: any) {
-                addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — continuing anyway.`);
-                try { clearIMU(); await startIMU(); await delayMs(300); } catch {}
+                addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — retrying reconnect…`);
+                // Retry once more with longer delay
+                try {
+                  await delayMs(1000);
+                  await reconnectGATT();
+                  await delayMs(500);
+                  clearIMU();
+                  await startIMU();
+                  await delayMs(300);
+                  addLog(`⟳ Retry reconnect succeeded.`);
+                } catch (e2: any) {
+                  addLog(`⚠ Retry also failed: ${e2.message || e2} — continuing anyway.`);
+                  try { clearIMU(); } catch {}
+                }
               }
             }
 
-            await delayMs(300); // gap between tests
+            await delayMs(600); // cooldown: let muscle relax before next test
           }
         }
       }
@@ -566,9 +621,9 @@ const SearchAlgorithm: React.FC = () => {
 
           try {
             // Stimulate this electrode
-            await sendSuperelectrodeCommand(elec, amp, true);
+            await retryBLE(() => sendSuperelectrodeCommand(elec, amp, true), `super-on ${elec}`);
             await pauseNode(delayS);
-            await sendSuperelectrodeCommand(elec, amp, false);
+            await retryBLE(() => sendSuperelectrodeCommand(elec, amp, false), `super-off ${elec}`);
             await delayMs(200);
           } catch (pairErr: any) {
             if (pairErr.message === "Flow aborted") throw pairErr;
@@ -579,14 +634,12 @@ const SearchAlgorithm: React.FC = () => {
           setCurrentStimPair(null);
           setCurrentAmplitude(null);
 
-          // Firmware reset every 25 tests
-          if (tested > 0 && tested % 25 === 0 && isRunningRef.current) {
-            addLog(`⟳ Firmware reset after ${tested} tests…`);
+          // Firmware + GATT reset every 15 tests — reconnect first
+          if (tested > 0 && tested % 15 === 0 && isRunningRef.current) {
+            addLog(`⟳ GATT reconnect + firmware reset after ${tested} tests…`);
             try {
-              await sendSuperelectrodeCommand(elec, 0, false);
-              await delayMs(100);
-              await stopIMU();
-              await delayMs(200);
+              await reconnectGATT();
+              await delayMs(400);
               await sendCommand("N");
               await delayMs(500);
               clearIMU();
@@ -594,8 +647,19 @@ const SearchAlgorithm: React.FC = () => {
               await delayMs(300);
               addLog(`⟳ Reset complete — continuing search.`);
             } catch (resetErr: any) {
-              addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — continuing anyway.`);
-              try { clearIMU(); await startIMU(); await delayMs(300); } catch {}
+              addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — retrying reconnect…`);
+              try {
+                await delayMs(1000);
+                await reconnectGATT();
+                await delayMs(500);
+                clearIMU();
+                await startIMU();
+                await delayMs(300);
+                addLog(`⟳ Retry reconnect succeeded.`);
+              } catch (e2: any) {
+                addLog(`⚠ Retry also failed: ${e2.message || e2} — continuing anyway.`);
+                try { clearIMU(); } catch {}
+              }
             }
           }
 
@@ -635,11 +699,11 @@ const SearchAlgorithm: React.FC = () => {
         };
         addResult(p1Result);
 
-        // Check if the sensor response exceeds threshold
-        if (combinedEff >= threshold) {
+        // Check if max raw sensor value exceeds threshold
+        if (maxRaw >= threshold) {
           optimalAmplitude = amp;
           setFoundAmplitude(amp);
-          addLog(`✓ Phase 1 complete: Threshold ${threshold} reached at ${amp} mA (effectiveness: ${combinedEff.toFixed(2)})`);
+          addLog(`✓ Phase 1 complete: Threshold ${threshold} reached at ${amp} mA (max raw: ${maxRaw.toFixed(1)})`);
           break;
         }
       }
@@ -658,108 +722,147 @@ const SearchAlgorithm: React.FC = () => {
       }
 
       // ═══════════════════════════════════════════════
-      // PHASE 2: Pair Selection
-      // At the found amplitude, stimulate each electrode 4→X individually,
-      // measure effectiveness per electrode, determine the best one.
+      // PHASE 2: Pair Selection (2 rounds, averaged)
+      // At the found amplitude, stimulate each electrode 4→X twice,
+      // average the effectiveness, and determine the best one.
       // ═══════════════════════════════════════════════
       setSuperPhase(2);
-      setTotalCombinations(phase2Total);
+      const phase2Rounds = 2;
+      setTotalCombinations(phase2Total * phase2Rounds);
       setElectrodesTested(0);
       tested = 0;
 
-      addLog(`── Phase 2: Finding best electrode pair at ${optimalAmplitude} mA ──`);
+      addLog(`── Phase 2: Finding best electrode pair at ${optimalAmplitude} mA (${phase2Rounds} rounds each) ──`);
 
       type PairRecord = { electrode: number; effectiveness: number; atAmplitude: number; avg1: number; avg2: number };
+      // Accumulate per-electrode results across rounds
+      const elecResults = new Map<number, { effSum: number; snrSum: number; avg1Sum: number; avg2Sum: number; activations: number; rounds: number }>();
       const bestMap = new Map<number, PairRecord>();
 
-      for (let elec = startElectrode; elec <= endElectrode; elec++) {
-        if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
-        if (!isConnectedRef.current) {
-          addLog("⚠ BLE disconnected — stopping search.");
-          isRunningRef.current = false;
-          break;
-        }
+      for (let round = 1; round <= phase2Rounds; round++) {
+        if (!isRunningRef.current) break;
+        addLog(`── Phase 2 — Round ${round}/${phase2Rounds} ──`);
 
-        tested++;
-        setElectrodesTested(tested);
-        setCurrentStimPair({ e1: 0, e2: elec });
-        setCurrentAmplitude(optimalAmplitude);
-        addLog(`[${tested}/${phase2Total}] Phase 2: (A) → ${elec} at ${optimalAmplitude} mA`);
-
-        try {
-          // 1. Clear previous sensor data
-          clearIMU();
-          await delayMs(50);
-
-          // 2. Start stimulation via 'F' command
-          await sendSuperelectrodeCommand(elec, optimalAmplitude, true);
-
-          // 3. Collect data during configured delay (abortable)
-          await pauseNode(delayS);
-
-          // 4. Stop stimulation
-          await sendSuperelectrodeCommand(elec, optimalAmplitude, false);
-          await delayMs(200);
-
-          // 5. Analyze sensor data — DFT-based low-frequency power analysis
-          const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
-          const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
-          const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
-          const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
-          const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
-
-          addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
-
-          // 6. Track best effectiveness for this electrode
-          const existing = bestMap.get(elec);
-          if (!existing || effValue > existing.effectiveness) {
-            bestMap.set(elec, { electrode: elec, effectiveness: effValue, atAmplitude: optimalAmplitude, avg1, avg2 });
+        for (let elec = startElectrode; elec <= endElectrode; elec++) {
+          if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
+          if (!isConnectedRef.current) {
+            addLog("⚠ BLE disconnected — stopping search.");
+            isRunningRef.current = false;
+            break;
           }
 
-          // 7. Record result
-          const result: SearchResult = {
-            electrode1: "A",
-            electrode2: elec,
-            amplitude: optimalAmplitude,
-            sensorAvg1: parseFloat(avg1.toFixed(2)),
-            sensorAvg2: parseFloat(avg2.toFixed(2)),
-            effectiveness: parseFloat(effValue.toFixed(2)),
-            snr: parseFloat(avgSnr.toFixed(2)),
-            activationDetected,
-            response: `P2 | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
-            timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
-          };
-          addResult(result);
-        } catch (pairErr: any) {
-          if (pairErr.message === "Flow aborted") throw pairErr;
-          addLog(`  ⚠ Skipped electrode ${elec} @ ${optimalAmplitude} mA — ${pairErr.message || pairErr}`);
-          try { await sendSuperelectrodeCommand(elec, optimalAmplitude, false); } catch {}
-        }
+          tested++;
+          setElectrodesTested(tested);
+          setCurrentStimPair({ e1: 0, e2: elec });
+          setCurrentAmplitude(optimalAmplitude);
+          addLog(`[${tested}/${phase2Total * phase2Rounds}] Phase 2 R${round}: (A) → ${elec} at ${optimalAmplitude} mA`);
 
-        setCurrentStimPair(null);
-        setCurrentAmplitude(null);
-
-        // Firmware reset every 25 tests
-        if (tested > 0 && tested % 25 === 0 && isRunningRef.current) {
-          addLog(`⟳ Firmware reset after ${tested} tests…`);
           try {
-            await sendSuperelectrodeCommand(elec, 0, false);
-            await delayMs(100);
-            await stopIMU();
-            await delayMs(200);
-            await sendCommand("N");
-            await delayMs(500);
+            // 1. Clear previous sensor data and flush in-flight BLE notifications
             clearIMU();
-            await startIMU();
-            await delayMs(300);
-            addLog(`⟳ Reset complete — continuing search.`);
-          } catch (resetErr: any) {
-            addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — continuing anyway.`);
-            try { clearIMU(); await startIMU(); await delayMs(300); } catch {}
-          }
-        }
+            await delayMs(150);
+            clearIMU();
+            await delayMs(50);
 
-        await delayMs(300); // gap between tests
+            // 2. Start stimulation via 'F' command
+            await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, true), `P2-on ${elec}`);
+
+            // 3. Collect data during configured delay (abortable)
+            await pauseNode(delayS);
+
+            // 4. Stop stimulation
+            await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, false), `P2-off ${elec}`);
+
+            // 5. Flush sensor data from during stimulation (removes proximity artifacts)
+            clearIMU();
+            await delayMs(50);
+
+            // 6. Post-stimulation listening: capture only genuine muscle response
+            await delayMs(400);
+
+            // 7. Analyze sensor data — only post-stim data (no stim artifacts)
+            const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
+            const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
+            const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
+            const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
+            const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
+
+            addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+
+            // 7. Accumulate results for averaging
+            const prev = elecResults.get(elec) || { effSum: 0, snrSum: 0, avg1Sum: 0, avg2Sum: 0, activations: 0, rounds: 0 };
+            prev.effSum += effValue;
+            prev.snrSum += avgSnr;
+            prev.avg1Sum += avg1;
+            prev.avg2Sum += avg2;
+            prev.activations += activationDetected ? 1 : 0;
+            prev.rounds += 1;
+            elecResults.set(elec, prev);
+
+            // 8. Record individual round result
+            const result: SearchResult = {
+              electrode1: "A",
+              electrode2: elec,
+              amplitude: optimalAmplitude,
+              sensorAvg1: parseFloat(avg1.toFixed(2)),
+              sensorAvg2: parseFloat(avg2.toFixed(2)),
+              effectiveness: parseFloat(effValue.toFixed(2)),
+              snr: parseFloat(avgSnr.toFixed(2)),
+              activationDetected,
+              response: `P2 R${round} | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
+              timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+            };
+            addResult(result);
+          } catch (pairErr: any) {
+            if (pairErr.message === "Flow aborted") throw pairErr;
+            addLog(`  ⚠ Skipped electrode ${elec} R${round} @ ${optimalAmplitude} mA — ${pairErr.message || pairErr}`);
+            try { await sendSuperelectrodeCommand(elec, optimalAmplitude, false); } catch {}
+          }
+
+          setCurrentStimPair(null);
+          setCurrentAmplitude(null);
+
+          // Firmware + GATT reset every 15 tests — reconnect first
+          if (tested > 0 && tested % 15 === 0 && isRunningRef.current) {
+            addLog(`⟳ GATT reconnect + firmware reset after ${tested} tests…`);
+            try {
+              await reconnectGATT();
+              await delayMs(400);
+              await sendCommand("N");
+              await delayMs(500);
+              clearIMU();
+              await startIMU();
+              await delayMs(300);
+              addLog(`⟳ Reset complete — continuing search.`);
+            } catch (resetErr: any) {
+              addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — retrying reconnect…`);
+              try {
+                await delayMs(1000);
+                await reconnectGATT();
+                await delayMs(500);
+                clearIMU();
+                await startIMU();
+                await delayMs(300);
+                addLog(`⟳ Retry reconnect succeeded.`);
+              } catch (e2: any) {
+                addLog(`⚠ Retry also failed: ${e2.message || e2} — continuing anyway.`);
+                try { clearIMU(); } catch {}
+              }
+            }
+          }
+
+          await delayMs(600); // cooldown: let muscle relax before next test
+        }
+      }
+
+      // Compute averaged effectiveness per electrode and pick the best
+      for (const [elec, acc] of elecResults.entries()) {
+        if (acc.rounds === 0) continue;
+        const avgEff = acc.effSum / acc.rounds;
+        const avgA1 = acc.avg1Sum / acc.rounds;
+        const avgA2 = acc.avg2Sum / acc.rounds;
+        addLog(`  Electrode ${elec}: avg eff=${avgEff.toFixed(2)} over ${acc.rounds} rounds (activations: ${acc.activations}/${acc.rounds})`);
+        bestMap.set(elec, { electrode: elec, effectiveness: avgEff, atAmplitude: optimalAmplitude, avg1: avgA1, avg2: avgA2 });
       }
 
       // Determine overall best electrode from Phase 2
