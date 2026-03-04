@@ -192,7 +192,7 @@ const SearchAlgorithm: React.FC = () => {
     throw new Error(`BLE ${label} failed after ${maxRetries} retries`);
   };
 
-  /** Emergency stop: stop stimulation via raw binary 'e' packet, then stop sensors. */
+  /** Emergency stop: stop stimulation, stop sensors, then full firmware reset. */
   const emergencyStop = async () => {
     try {
       // stimulate() now sends raw binary — electrode 0,0 amp 0, go=false
@@ -201,6 +201,10 @@ const SearchAlgorithm: React.FC = () => {
     try {
       // Stop sensors
       await sendCommand("B");
+    } catch {}
+    try {
+      // Full firmware reset — stops everything on the device
+      await sendCommand("N");
     } catch {}
     return true;
   };
@@ -404,9 +408,9 @@ const SearchAlgorithm: React.FC = () => {
             setCurrentStimPair(null);
             setCurrentAmplitude(null);
 
-            // Every 15 pairs, reconnect GATT first, then reset firmware.
+            // Every 40 pairs, reconnect GATT first, then reset firmware.
             // GATT reconnect must happen BEFORE any BLE writes (the queue is saturated).
-            if (tested > 0 && tested % 15 === 0 && isRunningRef.current) {
+            if (tested > 0 && tested % 40 === 0 && isRunningRef.current) {
               addLog(`⟳ GATT reconnect + firmware reset after ${tested} pairs…`);
               try {
                 // 1. Reconnect GATT first — flushes Chrome's BLE write queue
