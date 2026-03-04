@@ -3,6 +3,14 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useBluetooth } from "../BluetoothContext";
 import styles from "./SearchAlgorithm.module.css";
+import {
+  calculateEffectiveness,
+  createSearchTracker,
+  updateElectrodeData,
+  updateConfidenceMetrics,
+  determinePotentiallyBestPairs,
+  determineBestPair,
+} from "./signalAnalysis";
 
 type AlgorithmTab = "regular" | "superelectrode";
 
@@ -18,41 +26,15 @@ interface SearchResult {
   sensorAvg1: number;
   sensorAvg2: number;
   effectiveness: number;
+  snr?: number;
+  activationDetected?: boolean;
   response: string;
   timestamp: string;
 }
 
-// Idle sensor value — sensor reading at rest (no stimulation)
-const IDLE_VALUE = 0;
-
 /** Encode a byte value as 2-char uppercase hex ASCII (firmware GetPacketBinASCII). */
 function getPacketBinASCII(value: number): string {
   return (value & 0xff).toString(16).toUpperCase().padStart(2, '0');
-}
-
-/** Calculate effectiveness based on squared deviation from idle. */
-function calculateEffectiveness(
-  sensor1Data: number[],
-  sensor2Data: number[]
-): { squaredDiff: number; maxDeviation: number } {
-  const s1Sq =
-    sensor1Data.length > 0
-      ? sensor1Data.map((v) => Math.pow(v - IDLE_VALUE, 2)).reduce((a, b) => a + b, 0) / sensor1Data.length
-      : 0;
-  const s2Sq =
-    sensor2Data.length > 0
-      ? sensor2Data.map((v) => Math.pow(v - IDLE_VALUE, 2)).reduce((a, b) => a + b, 0) / sensor2Data.length
-      : 0;
-
-  const s1MaxDev =
-    sensor1Data.length > 0 ? Math.max(...sensor1Data.map((v) => Math.abs(v - IDLE_VALUE))) : 0;
-  const s2MaxDev =
-    sensor2Data.length > 0 ? Math.max(...sensor2Data.map((v) => Math.abs(v - IDLE_VALUE))) : 0;
-
-  return {
-    squaredDiff: (s1Sq + s2Sq) / 2,
-    maxDeviation: (s1MaxDev + s2MaxDev) / 2,
-  };
 }
 
 const SearchAlgorithm: React.FC = () => {
@@ -261,6 +243,9 @@ const SearchAlgorithm: React.FC = () => {
     // Track best pair across all tests
     type PairRecord = { anode: number; cathode: number; effectiveness: number; atAmplitude: number; avg1: number; avg2: number };
     const pairBestMap = new Map<string, PairRecord>();
+    const tracker = createSearchTracker();
+    const uniqueCombinations = pairsCount;
+    let confidenceBestFound = false;
     let tested = 0;
 
     try {
@@ -304,23 +289,54 @@ const SearchAlgorithm: React.FC = () => {
               await stimulate(anode, cathode, amp, false);
               await delayMs(200); // let trailing data arrive
 
-              // 5. Analyze sensor data — effectiveness = mean squared deviation from idle
+              // 5. Analyze sensor data — DFT-based low-frequency power analysis
               const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
               const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
               const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
               const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
-              const { squaredDiff: effValue } = calculateEffectiveness(s1, s2);
+              const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
 
-              addLog(`  → Effectiveness: ${effValue.toFixed(2)}  |  Avg: ${avg1.toFixed(1)} / ${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+              addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
 
-              // 6. Track best effectiveness for this pair
+              // 6. Update confidence tracker
+              updateElectrodeData(tracker, effValue, avgSnr, activationDetected, anode, cathode);
+              updateConfidenceMetrics(tracker, effValue, avgSnr, anode, cathode);
+
+              // 7. Track best effectiveness for this pair
               const key = `${anode}-${cathode}`;
               const existing = pairBestMap.get(key);
               if (!existing || effValue > existing.effectiveness) {
                 pairBestMap.set(key, { anode, cathode, effectiveness: effValue, atAmplitude: amp, avg1, avg2 });
               }
 
-              // 7. Record result
+              // 8. Check for early termination via confidence
+              const potentialBest = determinePotentiallyBestPairs(tracker);
+              const earlyBest = determineBestPair(potentialBest, uniqueCombinations);
+              if (earlyBest) {
+                const bestKey = `${earlyBest.anode}-${earlyBest.cathode}`;
+                const bestRecord = pairBestMap.get(bestKey);
+                const elapsedMs = Date.now() - startTime;
+                const mins = Math.floor(elapsedMs / 60000);
+                const secs = Math.floor((elapsedMs % 60000) / 1000);
+                const duration = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+                addLog(`✓ Early stop — confident best pair: ${earlyBest.anode}-${earlyBest.cathode} (confidence: ${earlyBest.confidenceMetric.toFixed(3)}, activations: ${earlyBest.activations}/${earlyBest.counts})`);
+                setBestResult({
+                  electrode1: earlyBest.anode,
+                  electrode2: earlyBest.cathode,
+                  amplitude: bestRecord?.atAmplitude ?? amp,
+                  sensorAvg1: parseFloat((bestRecord?.avg1 ?? avg1).toFixed(2)),
+                  sensorAvg2: parseFloat((bestRecord?.avg2 ?? avg2).toFixed(2)),
+                  effectiveness: parseFloat((bestRecord?.effectiveness ?? effValue).toFixed(2)),
+                  snr: parseFloat(avgSnr.toFixed(2)),
+                  activationDetected,
+                  response: `Confidence: ${earlyBest.confidenceMetric.toFixed(3)}`,
+                  timestamp: duration,
+                });
+                confidenceBestFound = true;
+                isRunningRef.current = false;
+              }
+
+              // 9. Record result
               const result: SearchResult = {
                 electrode1: anode,
                 electrode2: cathode,
@@ -328,7 +344,9 @@ const SearchAlgorithm: React.FC = () => {
                 sensorAvg1: parseFloat(avg1.toFixed(2)),
                 sensorAvg2: parseFloat(avg2.toFixed(2)),
                 effectiveness: parseFloat(effValue.toFixed(2)),
-                response: `Eff: ${effValue.toFixed(2)}  |  S1: ${avg1.toFixed(1)}  S2: ${avg2.toFixed(1)}`,
+                snr: parseFloat(avgSnr.toFixed(2)),
+                activationDetected,
+                response: `Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
                 timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
               };
               addResult(result);
@@ -369,27 +387,60 @@ const SearchAlgorithm: React.FC = () => {
         }
       }
 
-      // Determine overall best pair: highest effectiveness (squaredDiff)
-      if (pairBestMap.size > 0) {
-        const best = Array.from(pairBestMap.values()).reduce((a, b) =>
-          a.effectiveness > b.effectiveness ? a : b
-        );
+      // Log confidence summary
+      if (tracker.pairData.length > 0) {
+        const sorted = [...tracker.pairData].sort((a, b) => b.confidenceMetric - a.confidenceMetric);
+        addLog(`── Confidence Summary (top ${Math.min(3, sorted.length)} pairs) ──`);
+        for (const p of sorted.slice(0, 3)) {
+          addLog(`  ${p.anode}-${p.cathode}: conf=${p.confidenceMetric.toFixed(3)}, act=${p.activations}/${p.counts}, eff=${(p.counts > 0 ? p.totalEffectiveness / p.counts : 0).toFixed(2)}`);
+        }
+      }
+
+      // Determine overall best pair (skip if confidence-based early stop already found one)
+      if (pairBestMap.size > 0 && !confidenceBestFound) {
+        // Try confidence-based determination first
+        const potentialBest = determinePotentiallyBestPairs(tracker);
+        const confBest = determineBestPair(potentialBest, uniqueCombinations);
+
+        let bestAnode: number, bestCathode: number, bestAmp: number, bestAvg1: number, bestAvg2: number, bestEff: number;
+
+        if (confBest) {
+          const record = pairBestMap.get(`${confBest.anode}-${confBest.cathode}`);
+          bestAnode = confBest.anode;
+          bestCathode = confBest.cathode;
+          bestAmp = record?.atAmplitude ?? 0;
+          bestAvg1 = record?.avg1 ?? 0;
+          bestAvg2 = record?.avg2 ?? 0;
+          bestEff = record?.effectiveness ?? 0;
+          addLog(`Best pair determined by confidence metric (${confBest.confidenceMetric.toFixed(3)})`);
+        } else {
+          // Fallback: highest raw effectiveness
+          const best = Array.from(pairBestMap.values()).reduce((a, b) =>
+            a.effectiveness > b.effectiveness ? a : b
+          );
+          bestAnode = best.anode;
+          bestCathode = best.cathode;
+          bestAmp = best.atAmplitude;
+          bestAvg1 = best.avg1;
+          bestAvg2 = best.avg2;
+          bestEff = best.effectiveness;
+        }
+
         const elapsedMs = Date.now() - startTime;
         const mins = Math.floor(elapsedMs / 60000);
         const secs = Math.floor((elapsedMs % 60000) / 1000);
         const duration = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-        const bestResult: SearchResult = {
-          electrode1: best.anode,
-          electrode2: best.cathode,
-          amplitude: best.atAmplitude,
-          sensorAvg1: parseFloat(best.avg1.toFixed(2)),
-          sensorAvg2: parseFloat(best.avg2.toFixed(2)),
-          effectiveness: parseFloat(best.effectiveness.toFixed(2)),
-          response: `Effectiveness: ${best.effectiveness.toFixed(2)}`,
+        setBestResult({
+          electrode1: bestAnode,
+          electrode2: bestCathode,
+          amplitude: bestAmp,
+          sensorAvg1: parseFloat(bestAvg1.toFixed(2)),
+          sensorAvg2: parseFloat(bestAvg2.toFixed(2)),
+          effectiveness: parseFloat(bestEff.toFixed(2)),
+          response: `Effectiveness: ${bestEff.toFixed(2)}`,
           timestamp: duration,
-        };
-        setBestResult(bestResult);
-        addLog(`✓ Best pair: ${best.anode}-${best.cathode} at ${best.atAmplitude} mA (effectiveness: ${best.effectiveness.toFixed(2)}) — completed in ${duration}`);
+        });
+        addLog(`✓ Best pair: ${bestAnode}-${bestCathode} at ${bestAmp} mA (effectiveness: ${bestEff.toFixed(2)}) — completed in ${duration}`);
       }
 
       addLog("Regular Search completed.");
@@ -562,7 +613,7 @@ const SearchAlgorithm: React.FC = () => {
         const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
         const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
         const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
-        const { squaredDiff: combinedEff } = calculateEffectiveness(s1, s2);
+        const { effectiveness: combinedEff } = calculateEffectiveness(s1, s2);
 
         // Also check raw max values
         const maxRaw1 = s1.length > 0 ? Math.max(...s1.map(Math.abs)) : 0;
@@ -650,14 +701,14 @@ const SearchAlgorithm: React.FC = () => {
           await sendSuperelectrodeCommand(elec, optimalAmplitude, false);
           await delayMs(200);
 
-          // 5. Analyze sensor data
+          // 5. Analyze sensor data — DFT-based low-frequency power analysis
           const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
           const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
           const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
           const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
-          const { squaredDiff: effValue } = calculateEffectiveness(s1, s2);
+          const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
 
-          addLog(`  → Effectiveness: ${effValue.toFixed(2)}  |  Avg: ${avg1.toFixed(1)} / ${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+          addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
 
           // 6. Track best effectiveness for this electrode
           const existing = bestMap.get(elec);
@@ -673,7 +724,9 @@ const SearchAlgorithm: React.FC = () => {
             sensorAvg1: parseFloat(avg1.toFixed(2)),
             sensorAvg2: parseFloat(avg2.toFixed(2)),
             effectiveness: parseFloat(effValue.toFixed(2)),
-            response: `P2 | Eff: ${effValue.toFixed(2)}  |  S1: ${avg1.toFixed(1)}  S2: ${avg2.toFixed(1)}`,
+            snr: parseFloat(avgSnr.toFixed(2)),
+            activationDetected,
+            response: `P2 | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
             timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
           };
           addResult(result);
