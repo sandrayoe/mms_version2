@@ -408,39 +408,6 @@ const SearchAlgorithm: React.FC = () => {
             setCurrentStimPair(null);
             setCurrentAmplitude(null);
 
-            // Every 40 pairs, reconnect GATT first, then reset firmware.
-            // GATT reconnect must happen BEFORE any BLE writes (the queue is saturated).
-            if (tested > 0 && tested % 40 === 0 && isRunningRef.current) {
-              addLog(`⟳ GATT reconnect + firmware reset after ${tested} pairs…`);
-              try {
-                // 1. Reconnect GATT first — flushes Chrome's BLE write queue
-                await reconnectGATT();
-                await delayMs(400);
-                // 2. Now send commands on the fresh connection
-                await sendCommand("N");  // firmware reset
-                await delayMs(500);
-                clearIMU();
-                await startIMU();
-                await delayMs(300);
-                addLog(`⟳ Reset complete — continuing search.`);
-              } catch (resetErr: any) {
-                addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — retrying reconnect…`);
-                // Retry once more with longer delay
-                try {
-                  await delayMs(1000);
-                  await reconnectGATT();
-                  await delayMs(500);
-                  clearIMU();
-                  await startIMU();
-                  await delayMs(300);
-                  addLog(`⟳ Retry reconnect succeeded.`);
-                } catch (e2: any) {
-                  addLog(`⚠ Retry also failed: ${e2.message || e2} — continuing anyway.`);
-                  try { clearIMU(); } catch {}
-                }
-              }
-            }
-
             await delayMs(600); // cooldown: let muscle relax before next test
           }
         }
@@ -638,35 +605,6 @@ const SearchAlgorithm: React.FC = () => {
           setCurrentStimPair(null);
           setCurrentAmplitude(null);
 
-          // Firmware + GATT reset every 15 tests — reconnect first
-          if (tested > 0 && tested % 15 === 0 && isRunningRef.current) {
-            addLog(`⟳ GATT reconnect + firmware reset after ${tested} tests…`);
-            try {
-              await reconnectGATT();
-              await delayMs(400);
-              await sendCommand("N");
-              await delayMs(500);
-              clearIMU();
-              await startIMU();
-              await delayMs(300);
-              addLog(`⟳ Reset complete — continuing search.`);
-            } catch (resetErr: any) {
-              addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — retrying reconnect…`);
-              try {
-                await delayMs(1000);
-                await reconnectGATT();
-                await delayMs(500);
-                clearIMU();
-                await startIMU();
-                await delayMs(300);
-                addLog(`⟳ Retry reconnect succeeded.`);
-              } catch (e2: any) {
-                addLog(`⚠ Retry also failed: ${e2.message || e2} — continuing anyway.`);
-                try { clearIMU(); } catch {}
-              }
-            }
-          }
-
           await delayMs(300); // gap between tests
         }
 
@@ -825,35 +763,6 @@ const SearchAlgorithm: React.FC = () => {
 
           setCurrentStimPair(null);
           setCurrentAmplitude(null);
-
-          // Firmware + GATT reset every 15 tests — reconnect first
-          if (tested > 0 && tested % 15 === 0 && isRunningRef.current) {
-            addLog(`⟳ GATT reconnect + firmware reset after ${tested} tests…`);
-            try {
-              await reconnectGATT();
-              await delayMs(400);
-              await sendCommand("N");
-              await delayMs(500);
-              clearIMU();
-              await startIMU();
-              await delayMs(300);
-              addLog(`⟳ Reset complete — continuing search.`);
-            } catch (resetErr: any) {
-              addLog(`⚠ Reset failed: ${resetErr.message || resetErr} — retrying reconnect…`);
-              try {
-                await delayMs(1000);
-                await reconnectGATT();
-                await delayMs(500);
-                clearIMU();
-                await startIMU();
-                await delayMs(300);
-                addLog(`⟳ Retry reconnect succeeded.`);
-              } catch (e2: any) {
-                addLog(`⚠ Retry also failed: ${e2.message || e2} — continuing anyway.`);
-                try { clearIMU(); } catch {}
-              }
-            }
-          }
 
           await delayMs(600); // cooldown: let muscle relax before next test
         }
