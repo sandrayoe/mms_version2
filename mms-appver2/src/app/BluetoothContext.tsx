@@ -42,6 +42,17 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const isManualDisconnectRef = useRef(false);
   const impedanceBufferRef = useRef<string>(''); // Buffer for accumulating impedance data across notifications
 
+  // Stable event listener refs — handleIncomingData is recreated on every React render
+  // (the drain timer runs at 30 Hz causing constant re-renders), so passing it directly
+  // to addEventListener/removeEventListener creates a new unique reference each time,
+  // meaning removeEventListener never matches and listeners accumulate unboundedly.
+  // Solution: keep a ref that always points to the latest handleIncomingData, and use
+  // a single stable wrapper function whose reference never changes.
+  const handleIncomingDataRef = useRef<((event: any) => void) | null>(null);
+  const stableIncomingHandlerRef = useRef((event: any) => {
+    handleIncomingDataRef.current?.(event);
+  });
+
   const [imuData, setImuData] = useState<{ imu1_changes: BluetoothSample[]; imu2_changes: BluetoothSample[] }>({ imu1_changes: [], imu2_changes: [] });
   const imuDataRef = useRef(imuData);
   useEffect(() => {
@@ -138,15 +149,11 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const txChar = await service?.getCharacteristic(TX_CHARACTERISTIC_UUID);
 
       if (txChar) {
-        // Start notifications, but avoid adding duplicate listeners.
+        // Start notifications with the stable handler so addEventListener/removeEventListener
+        // always use the same function reference regardless of React re-renders.
         await txChar.startNotifications();
-        try {
-          // remove any previous listener reference first
-          txChar.removeEventListener("characteristicvaluechanged", handleIncomingData);
-        } catch (e) {
-          // ignore if none
-        }
-        txChar.addEventListener("characteristicvaluechanged", handleIncomingData);
+        txChar.removeEventListener("characteristicvaluechanged", stableIncomingHandlerRef.current);
+        txChar.addEventListener("characteristicvaluechanged", stableIncomingHandlerRef.current);
       }
 
       // Update refs immediately (synchronous) so sendCommand can use them right away
@@ -210,9 +217,9 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const txChar = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
 
       if (txChar) {
-        try { txChar.removeEventListener("characteristicvaluechanged", handleIncomingData); } catch {}
+        txChar.removeEventListener("characteristicvaluechanged", stableIncomingHandlerRef.current);
         await txChar.startNotifications();
-        txChar.addEventListener("characteristicvaluechanged", handleIncomingData);
+        txChar.addEventListener("characteristicvaluechanged", stableIncomingHandlerRef.current);
       }
 
       // Update refs immediately (synchronous) — critical so sendCommand sees new chars right away
@@ -542,12 +549,18 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  // Update ref every render so stableIncomingHandlerRef always dispatches to the latest version.
+  // Updating a ref during render is safe and is the standard React pattern for this.
+  handleIncomingDataRef.current = handleIncomingData;
+
   const startIMU = async () => {
     const txChar = txCharacteristicRef.current;
     if (!txChar) return;
     try {
       await sendCommand("b");
-      txChar.addEventListener("characteristicvaluechanged", handleIncomingData);
+      // Remove first to guarantee no duplicate even if called multiple times
+      txChar.removeEventListener("characteristicvaluechanged", stableIncomingHandlerRef.current);
+      txChar.addEventListener("characteristicvaluechanged", stableIncomingHandlerRef.current);
       await txChar.startNotifications();
     } catch (err) {
       console.error("Failed to start IMU:", err);
@@ -560,7 +573,7 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       await sendCommand("B");
       // Remove the handler and stop notifications if possible.
-      try { txChar.removeEventListener("characteristicvaluechanged", handleIncomingData); } catch (e) {}
+      try { txChar.removeEventListener("characteristicvaluechanged", stableIncomingHandlerRef.current); } catch (e) {}
       await txChar.stopNotifications();
     } catch (err) {
       console.error("Failed to stop IMU:", err);
@@ -568,9 +581,11 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const clearIMU = () => {
-  setImuData({ imu1_changes: [], imu2_changes: [] });
-    // also reset local ref if used elsewhere
+    setImuData({ imu1_changes: [], imu2_changes: [] });
     imuDataRef.current = { imu1_changes: [], imu2_changes: [] };
+    // Also drain the pending pairs buffer so stale samples from the previous
+    // stimulation don't bleed into the next measurement after clearIMU() is called.
+    pairsRef.current = [];
   };
 
   const sendCommand = async (...args: (string | number)[]) => {
@@ -623,20 +638,18 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       0x00                    // superElectrode = 0
     ]);
 
-    // Write to RX characteristic (device's RX = we write to it), same as sendCommand.
-    // NUS RX is "write without response" by spec — using writeValue (with ACK) would
-    // block waiting for an ACK that never comes, saturating Chrome's GATT queue after
-    // ~40-80 operations and causing the device to stop responding.
-    const rx = rxCharacteristicRef?.current as any;
+    // Write to RX characteristic using writeValue (with ACK).
+    // For stimulation start/stop commands, the ACK is important: it confirms the
+    // firmware received the packet and provides implicit backpressure. Without it,
+    // dropped packets are silent and retryBLE cannot detect or recover from them.
+    // Two stimulate calls per pair (on + off) spaced 500ms+ apart never saturate
+    // the GATT queue, so there is no benefit to writeValueWithoutResponse here.
+    const rx = rxCharacteristicRef?.current;
     if (!rx) {
       console.error("stimulate: RX characteristic not available");
       return;
     }
-    if (typeof rx.writeValueWithoutResponse === "function") {
-      await rx.writeValueWithoutResponse(packet);
-    } else {
-      await rx.writeValue(packet);
-    }
+    await rx.writeValue(packet);
 
     console.log(`Stimulation sent (raw): [${Array.from(packet).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}] | E1=${electrode1} E2=${electrode2} Amp=${amp} Go=${go}`);
   };
