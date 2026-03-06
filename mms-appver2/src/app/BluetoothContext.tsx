@@ -624,14 +624,19 @@ export const BluetoothProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     ]);
 
     // Write to RX characteristic (device's RX = we write to it), same as sendCommand.
-    // Use writeValue (with response/ACK) for reliable delivery — stimulation
-    // commands are critical and must not be silently dropped.
-    const rx = rxCharacteristicRef?.current;
+    // NUS RX is "write without response" by spec — using writeValue (with ACK) would
+    // block waiting for an ACK that never comes, saturating Chrome's GATT queue after
+    // ~40-80 operations and causing the device to stop responding.
+    const rx = rxCharacteristicRef?.current as any;
     if (!rx) {
       console.error("stimulate: RX characteristic not available");
       return;
     }
-    await rx.writeValue(packet);
+    if (typeof rx.writeValueWithoutResponse === "function") {
+      await rx.writeValueWithoutResponse(packet);
+    } else {
+      await rx.writeValue(packet);
+    }
 
     console.log(`Stimulation sent (raw): [${Array.from(packet).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}] | E1=${electrode1} E2=${electrode2} Amp=${amp} Go=${go}`);
   };
