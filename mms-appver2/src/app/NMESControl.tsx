@@ -645,49 +645,15 @@ const SensorPanel: React.FC = () => {
     const map1 = new Map(s1.map((p) => [p.time, p.sensorValue] as [number, number]));
     const map2 = new Map(s2.map((p) => [p.time, p.sensorValue] as [number, number]));
 
-    // Prepare parameter snapshots (ensure sorted by time)
-    const snaps = (paramSnapshotsRef.current ?? []).slice().sort((a, b) => a.time - b.time);
+  // Build header
+  let csv = ['time_utc','sensor1','sensor2'].join(',') + '\n';
 
-    // CSV helper moved to component scope
-
-  // Define parameter column order
-  const paramCols = ['frequency','amplitude','electrode1','electrode2'];
-  // Add patient/sensor metadata columns to header
-  const metaCols = ['patientName','sensorName'];
-
-  // Build header (relative time first to avoid confusion: relative_time_s, sensor1, sensor2, params, metadata)
-  let csv = ['relative_time_s','sensor1','sensor2', ...paramCols, ...metaCols].join(',') + '\n';
-
-    // Use a pointer into snaps because times are sorted ascending
-    let snapIdx = 0;
+    const wallClockStart = sessionWallClockStartRef.current ?? Date.now();
     for (const t of times) {
-      // advance snapIdx while next snapshot time <= t
-      while (snapIdx + 1 < snaps.length && snaps[snapIdx + 1].time <= t) snapIdx++;
-      // If the first snap is after t, we keep snapIdx at 0 only if its time <= t, otherwise there is no snap <= t
-      let paramsForRow: Record<string,string> = {};
-      if (snaps.length === 0) {
-        // no snapshots recorded; use current UI values as best-effort
-        paramsForRow = {
-          frequency: frequency || 'N/A',
-          amplitude: amplitude || 'N/A',
-          electrode1: electrode1 || 'N/A',
-          electrode2: electrode2 || 'N/A'
-        };
-      } else {
-        // if the current snapIdx's time is <= t, use it; otherwise use the earliest snap (fallback)
-        if (snaps[snapIdx].time <= t) {
-          paramsForRow = snaps[snapIdx].params;
-        } else {
-          paramsForRow = snaps[0].params;
-        }
-      }
-      // No software absolute timestamps: write sensor values and relative time only
+      const utcDate = new Date(wallClockStart + t * 1000);
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
-      const paramVals = paramCols.map(c => escapeCSV(paramsForRow[c] ?? 'N/A'));
-      const metaVals = [escapeCSV(patientName || 'N/A'), escapeCSV(sensorName || 'N/A')];
-      // Escape all fields and put relative time first
-      const rowFields = [escapeCSV(String(t)), escapeCSV(v1), escapeCSV(v2), ...paramVals, ...metaVals];
+      const rowFields = [escapeCSV(utcDate.toISOString()), escapeCSV(v1), escapeCSV(v2)];
       csv += rowFields.join(',') + '\n';
     }
 
