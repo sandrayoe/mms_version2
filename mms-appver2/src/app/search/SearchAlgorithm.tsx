@@ -407,8 +407,6 @@ const SearchAlgorithm: React.FC = () => {
 
             setCurrentStimPair(null);
             setCurrentAmplitude(null);
-
-            await delayMs(600); // cooldown: let muscle relax before next test
           }
         }
       }
@@ -604,8 +602,6 @@ const SearchAlgorithm: React.FC = () => {
 
           setCurrentStimPair(null);
           setCurrentAmplitude(null);
-
-          await delayMs(300); // gap between tests
         }
 
         if (!isRunningRef.current) break;
@@ -763,8 +759,6 @@ const SearchAlgorithm: React.FC = () => {
 
           setCurrentStimPair(null);
           setCurrentAmplitude(null);
-
-          await delayMs(600); // cooldown: let muscle relax before next test
         }
       }
 
