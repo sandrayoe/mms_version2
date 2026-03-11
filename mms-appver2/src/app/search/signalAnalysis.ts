@@ -273,19 +273,9 @@ export function updateConfidenceMetrics(
   tracker.activationRateAvg = rateCount > 0 ? rateSum / rateCount : 0;
 
   // Recalculate all confidence metrics
-  let totalConfidence = 0;
   for (const pair of tracker.pairData) {
     if (pair.counts > 0) {
-      const cm = calculateConfidenceMetric(pair, tracker);
-      pair.confidenceMetric = cm;
-      totalConfidence += cm;
-    }
-  }
-
-  // Normalize so they sum to 1
-  if (totalConfidence > 0) {
-    for (const pair of tracker.pairData) {
-      pair.confidenceMetric /= totalConfidence;
+      pair.confidenceMetric = calculateConfidenceMetric(pair, tracker);
     }
   }
 
