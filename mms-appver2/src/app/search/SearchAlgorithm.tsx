@@ -589,9 +589,9 @@ const SearchAlgorithm: React.FC = () => {
           setCurrentAmplitude(amp);
 
           try {
-            // Stimulate this electrode
+            // Stimulate this electrode (Phase 1 uses half the configured delay)
             await retryBLE(() => sendSuperelectrodeCommand(elec, amp, true), `super-on ${elec}`);
-            await pauseNode(delayS);
+            await pauseNode(delayS / 2);
             await retryBLE(() => sendSuperelectrodeCommand(elec, amp, false), `super-off ${elec}`);
             await delayMs(200);
           } catch (pairErr: any) {
