@@ -335,7 +335,7 @@ const SearchAlgorithm: React.FC = () => {
               await delayMs(50);
 
               // 6. Post-stimulation listening: capture only genuine muscle response
-              await delayMs(400);
+              await delayMs(250);
 
               // 7. Analyze sensor data — only post-stim data (no stim artifacts)
               const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
