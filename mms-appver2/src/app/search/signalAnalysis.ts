@@ -261,12 +261,16 @@ export function updateConfidenceMetrics(
   tracker.totalSnr += avgSnr;
   tracker.totalEffectiveness += effectiveness;
 
-  // Update average activation rate
+  // Recalculate average activation rate across ALL pairs (must not accumulate)
+  let rateSum = 0;
+  let rateCount = 0;
   for (const pair of tracker.pairData) {
-    if (pair.anode === anode && pair.cathode === cathode && pair.counts > 0) {
-      tracker.activationRateAvg += pair.activations / pair.counts;
+    if (pair.counts > 0) {
+      rateSum += pair.activations / pair.counts;
+      rateCount++;
     }
   }
+  tracker.activationRateAvg = rateCount > 0 ? rateSum / rateCount : 0;
 
   // Recalculate all confidence metrics
   let totalConfidence = 0;
