@@ -330,14 +330,10 @@ const SearchAlgorithm: React.FC = () => {
               // 4. Stop stimulation
               await retryBLE(() => stimulate(anode, cathode, amp, false), `stim-off ${anode}-${cathode}`);
 
-              // 5. Flush sensor data from during stimulation (removes proximity artifacts)
-              clearIMU();
-              await delayMs(50);
-
-              // 6. Post-stimulation listening: capture only genuine muscle response
+              // 5. Post-stimulation listening: capture muscle response
               await delayMs(300);
 
-              // 7. Analyze sensor data — only post-stim data (no stim artifacts)
+              // 6. Analyze sensor data
               const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
               const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
               const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
@@ -345,6 +341,9 @@ const SearchAlgorithm: React.FC = () => {
               const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
 
               addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+
+              // 6b. Flush sensor data after analysis
+              clearIMU();
 
               // 6. Update confidence tracker
               updateElectrodeData(tracker, effValue, avgSnr, activationDetected, anode, cathode);
@@ -704,14 +703,10 @@ const SearchAlgorithm: React.FC = () => {
           // 4. Stop stimulation
           await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, false), `P2-off ${elec}`);
 
-          // 5. Flush sensor data from during stimulation (removes proximity artifacts)
-          clearIMU();
-          await delayMs(50);
-
-          // 6. Post-stimulation listening: capture only genuine muscle response
+          // 5. Post-stimulation listening: capture muscle response
           await delayMs(300);
 
-          // 7. Analyze sensor data — only post-stim data (no stim artifacts)
+          // 6. Analyze sensor data
           const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
           const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
           const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
@@ -719,6 +714,9 @@ const SearchAlgorithm: React.FC = () => {
           const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
 
           addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+
+          // 6b. Flush sensor data after analysis
+          clearIMU();
 
           // 8. Record result
           const result: SearchResult = {
