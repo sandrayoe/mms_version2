@@ -589,9 +589,9 @@ const SearchAlgorithm: React.FC = () => {
           setCurrentAmplitude(amp);
 
           try {
-            // Stimulate this electrode (Phase 1 uses half the configured delay)
+            // Stimulate this electrode
             await retryBLE(() => sendSuperelectrodeCommand(elec, amp, true), `super-on ${elec}`);
-            await pauseNode(delayS / 2);
+            await pauseNode(delayS);
             await retryBLE(() => sendSuperelectrodeCommand(elec, amp, false), `super-off ${elec}`);
             await delayMs(200);
           } catch (pairErr: any) {
@@ -665,111 +665,85 @@ const SearchAlgorithm: React.FC = () => {
       // average the effectiveness, and determine the best one.
       // ═══════════════════════════════════════════════
       setSuperPhase(2);
-      const phase2Rounds = 2;
-      setTotalCombinations(phase2Total * phase2Rounds);
+      setTotalCombinations(phase2Total);
       setElectrodesTested(0);
       tested = 0;
 
-      addLog(`── Phase 2: Finding best electrode pair at ${optimalAmplitude} mA (${phase2Rounds} rounds each) ──`);
+      addLog(`── Phase 2: Finding best electrode pair at ${optimalAmplitude} mA ──`);
 
       type PairRecord = { electrode: number; effectiveness: number; atAmplitude: number; avg1: number; avg2: number };
-      // Accumulate per-electrode results across rounds
-      const elecResults = new Map<number, { effSum: number; snrSum: number; avg1Sum: number; avg2Sum: number; activations: number; rounds: number }>();
       const bestMap = new Map<number, PairRecord>();
 
-      for (let round = 1; round <= phase2Rounds; round++) {
-        if (!isRunningRef.current) break;
-        addLog(`── Phase 2 — Round ${round}/${phase2Rounds} ──`);
-
-        for (let elec = startElectrode; elec <= endElectrode; elec++) {
-          if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
-          if (!isConnectedRef.current) {
-            addLog("⚠ BLE disconnected — stopping search.");
-            isRunningRef.current = false;
-            break;
-          }
-
-          tested++;
-          setElectrodesTested(tested);
-          setCurrentStimPair({ e1: 0, e2: elec });
-          setCurrentAmplitude(optimalAmplitude);
-          addLog(`[${tested}/${phase2Total * phase2Rounds}] Phase 2 R${round}: (A) → ${elec} at ${optimalAmplitude} mA`);
-
-          try {
-            // 1. Clear previous sensor data and flush in-flight BLE notifications
-            clearIMU();
-            await delayMs(150);
-            clearIMU();
-            await delayMs(50);
-
-            // 2. Start stimulation via 'F' command
-            await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, true), `P2-on ${elec}`);
-
-            // 3. Collect data during configured delay (abortable)
-            await pauseNode(delayS);
-
-            // 4. Stop stimulation
-            await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, false), `P2-off ${elec}`);
-
-            // 5. Flush sensor data from during stimulation (removes proximity artifacts)
-            clearIMU();
-            await delayMs(50);
-
-            // 6. Post-stimulation listening: capture only genuine muscle response
-            await delayMs(400);
-
-            // 7. Analyze sensor data — only post-stim data (no stim artifacts)
-            const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
-            const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
-            const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
-            const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
-            const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
-
-            addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
-
-            // 7. Accumulate results for averaging
-            const prev = elecResults.get(elec) || { effSum: 0, snrSum: 0, avg1Sum: 0, avg2Sum: 0, activations: 0, rounds: 0 };
-            prev.effSum += effValue;
-            prev.snrSum += avgSnr;
-            prev.avg1Sum += avg1;
-            prev.avg2Sum += avg2;
-            prev.activations += activationDetected ? 1 : 0;
-            prev.rounds += 1;
-            elecResults.set(elec, prev);
-
-            // 8. Record individual round result
-            const result: SearchResult = {
-              electrode1: "A",
-              electrode2: elec,
-              amplitude: optimalAmplitude,
-              sensorAvg1: parseFloat(avg1.toFixed(2)),
-              sensorAvg2: parseFloat(avg2.toFixed(2)),
-              effectiveness: parseFloat(effValue.toFixed(2)),
-              snr: parseFloat(avgSnr.toFixed(2)),
-              activationDetected,
-              response: `P2 R${round} | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
-              timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
-            };
-            addResult(result);
-          } catch (pairErr: any) {
-            if (pairErr.message === "Flow aborted") throw pairErr;
-            addLog(`  ⚠ Skipped electrode ${elec} R${round} @ ${optimalAmplitude} mA — ${pairErr.message || pairErr}`);
-            try { await sendSuperelectrodeCommand(elec, optimalAmplitude, false); } catch {}
-          }
-
-          setCurrentStimPair(null);
-          setCurrentAmplitude(null);
+      for (let elec = startElectrode; elec <= endElectrode; elec++) {
+        if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
+        if (!isConnectedRef.current) {
+          addLog("⚠ BLE disconnected — stopping search.");
+          isRunningRef.current = false;
+          break;
         }
-      }
 
-      // Compute averaged effectiveness per electrode and pick the best
-      for (const [elec, acc] of elecResults.entries()) {
-        if (acc.rounds === 0) continue;
-        const avgEff = acc.effSum / acc.rounds;
-        const avgA1 = acc.avg1Sum / acc.rounds;
-        const avgA2 = acc.avg2Sum / acc.rounds;
-        addLog(`  Electrode ${elec}: avg eff=${avgEff.toFixed(2)} over ${acc.rounds} rounds (activations: ${acc.activations}/${acc.rounds})`);
-        bestMap.set(elec, { electrode: elec, effectiveness: avgEff, atAmplitude: optimalAmplitude, avg1: avgA1, avg2: avgA2 });
+        tested++;
+        setElectrodesTested(tested);
+        setCurrentStimPair({ e1: 0, e2: elec });
+        setCurrentAmplitude(optimalAmplitude);
+        addLog(`[${tested}/${phase2Total}] Phase 2: (A) → ${elec} at ${optimalAmplitude} mA`);
+
+        try {
+          // 1. Clear previous sensor data and flush in-flight BLE notifications
+          clearIMU();
+          await delayMs(150);
+          clearIMU();
+          await delayMs(50);
+
+          // 2. Start stimulation via 'F' command
+          await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, true), `P2-on ${elec}`);
+
+          // 3. Collect data during configured delay (abortable)
+          await pauseNode(delayS);
+
+          // 4. Stop stimulation
+          await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, false), `P2-off ${elec}`);
+
+          // 5. Flush sensor data from during stimulation (removes proximity artifacts)
+          clearIMU();
+          await delayMs(50);
+
+          // 6. Post-stimulation listening: capture only genuine muscle response
+          await delayMs(300);
+
+          // 7. Analyze sensor data — only post-stim data (no stim artifacts)
+          const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
+          const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
+          const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
+          const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
+          const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
+
+          addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+
+          // 8. Record result
+          const result: SearchResult = {
+            electrode1: "A",
+            electrode2: elec,
+            amplitude: optimalAmplitude,
+            sensorAvg1: parseFloat(avg1.toFixed(2)),
+            sensorAvg2: parseFloat(avg2.toFixed(2)),
+            effectiveness: parseFloat(effValue.toFixed(2)),
+            snr: parseFloat(avgSnr.toFixed(2)),
+            activationDetected,
+            response: `P2 | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
+            timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+          };
+          addResult(result);
+
+          bestMap.set(elec, { electrode: elec, effectiveness: effValue, atAmplitude: optimalAmplitude, avg1, avg2 });
+        } catch (pairErr: any) {
+          if (pairErr.message === "Flow aborted") throw pairErr;
+          addLog(`  ⚠ Skipped electrode ${elec} @ ${optimalAmplitude} mA — ${pairErr.message || pairErr}`);
+          try { await sendSuperelectrodeCommand(elec, optimalAmplitude, false); } catch {}
+        }
+
+        setCurrentStimPair(null);
+        setCurrentAmplitude(null);
       }
 
       // Determine overall best electrode from Phase 2
