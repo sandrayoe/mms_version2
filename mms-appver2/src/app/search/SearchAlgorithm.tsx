@@ -1000,20 +1000,69 @@ const SearchAlgorithm: React.FC = () => {
 
       // ═══════════════════════════════════════════════
       // PHASE 3: Individual Pair Refinement
-      // Take the winning electrode from Phase 2 and test it paired with
-      // every other individual electrode (1→N, excluding itself) using
-      // the regular 'e' stimulation command. Rank all pairs by effectiveness.
+      // Re-test the superelectrode A-winner, then test the winner paired
+      // with every other individual electrode. Rank all together.
       // ═══════════════════════════════════════════════
       setSuperPhase(3);
-      const phase3Pairs = totalElec - 1; // all electrodes except the winner
+      const phase3Pairs = totalElec; // A-winner + (N-1) individual pairs
       setTotalCombinations(phase3Pairs);
       setElectrodesTested(0);
       tested = 0;
 
-      addLog(`── Phase 3: Testing electrode ${phase2Winner} against all others (1-${totalElec}, skip ${phase2Winner}) at ${optimalAmplitude} mA ──`);
+      addLog(`── Phase 3: Testing A-${phase2Winner} + ${phase2Winner}-X pairs at ${optimalAmplitude} mA ──`);
 
       const phase3Results: SearchResult[] = [];
 
+      // --- First: test A-winner (superelectrode command) ---
+      {
+        if (isRunningRef.current && isConnectedRef.current) {
+          tested++;
+          setElectrodesTested(tested);
+          setCurrentStimPair({ e1: phase2Winner, e2: phase2Winner });
+          setCurrentAmplitude(optimalAmplitude);
+          addLog(`[${tested}/${phase3Pairs}] Phase 3: A – ${phase2Winner} (superelectrode) at ${optimalAmplitude} mA`);
+
+          try {
+            clearIMU();
+            await delayMs(150);
+            clearIMU();
+            await delayMs(50);
+
+            await retryBLE(() => sendSuperelectrodeCommand(phase2Winner!, optimalAmplitude!, true), `P3-super-on A-${phase2Winner}`);
+            await pauseNode(delayS);
+            await retryBLE(() => sendSuperelectrodeCommand(phase2Winner!, optimalAmplitude!, false), `P3-super-off A-${phase2Winner}`);
+            await delayMs(300);
+
+            const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
+            const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
+            const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
+            const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
+            const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
+
+            addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+            clearIMU();
+
+            const result: SearchResult = {
+              electrode1: "A", electrode2: phase2Winner, amplitude: optimalAmplitude,
+              sensorAvg1: parseFloat(avg1.toFixed(2)), sensorAvg2: parseFloat(avg2.toFixed(2)),
+              effectiveness: parseFloat(effValue.toFixed(2)), snr: parseFloat(avgSnr.toFixed(2)),
+              activationDetected,
+              response: `P3 | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
+              timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+            };
+            addResult(result);
+            phase3Results.push(result);
+          } catch (pairErr: any) {
+            if (pairErr.message === "Flow aborted") throw pairErr;
+            addLog(`  ⚠ Skipped A-${phase2Winner} — ${pairErr.message || pairErr}`);
+            try { await sendSuperelectrodeCommand(phase2Winner, optimalAmplitude, false); } catch {}
+          }
+          setCurrentStimPair(null);
+          setCurrentAmplitude(null);
+        }
+      }
+
+      // --- Then: test winner-X for each other electrode ---
       for (let other = 1; other <= totalElec; other++) {
         if (other === phase2Winner) continue;
         if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
@@ -1031,7 +1080,6 @@ const SearchAlgorithm: React.FC = () => {
           clearIMU();
           await delayMs(50);
 
-          // Use regular stimulate() — electrode pair with the winner
           await retryBLE(() => stimulate(phase2Winner!, other, optimalAmplitude!, true), `P3-on ${phase2Winner}-${other}`);
           await pauseNode(delayS);
           await retryBLE(() => stimulate(phase2Winner!, other, optimalAmplitude!, false), `P3-off ${phase2Winner}-${other}`);
