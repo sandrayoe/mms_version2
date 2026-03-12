@@ -25,6 +25,7 @@ const DocsPage: React.FC = () => {
           <li>f. Pause/resume recording. After recording started, the process can be paused and resumed, with the paused data will be discarded.</li>
           <li>g. Search Algorithm page: automatically test all electrode pair combinations to find the best motor points for NMES stimulation.</li>
           <li>h. Superelectrode Search: groups electrodes 1–3 as a single positive pole and scans individual cathode electrodes using the firmware &apos;F&apos; command.</li>
+          <li>i. Superelectrode+ Search: extends superelectrode with a Phase 3 that takes the winning electrode and tests it against all other electrodes individually, ranking pairs by effectiveness.</li>
         </ul>
       </section>
 
@@ -482,13 +483,42 @@ electrode1,electrode2,impedance
           regular search&apos;s 36 pairs × 6 amplitudes = 216.
         </p>
 
+        <h3 style={{ marginTop: 16 }}>Superelectrode+ Search (3-phase)</h3>
+        <p>
+          The Superelectrode+ tab extends the Superelectrode algorithm with an additional
+          <strong> Phase 3</strong> that refines the result by testing the winning electrode
+          against every other individual electrode.
+        </p>
+        <ol>
+          <li><strong>Phase 1 &amp; 2</strong> — identical to Superelectrode (find optimal amplitude,
+            then find best cathode from the grouped-anode sweep).</li>
+          <li>
+            <strong>Phase 3 — Individual Pair Refinement:</strong> takes the winning cathode
+            electrode from Phase 2 (e.g. electrode 7) and tests it paired with every other
+            electrode (1–<em>N</em>, excluding itself) using the regular <code>e</code>
+            stimulation command. Each pair goes through the standard test cycle: clear sensors
+            → start stimulation → wait (delay) → stop stimulation → calculate DFT effectiveness.
+          </li>
+        </ol>
+        <p>
+          After Phase 3 completes, all tested pairs are <strong>ranked by effectiveness</strong>
+          (highest first) and displayed in a ranking table. The #1 ranked pair is shown as the
+          best result. This helps identify the optimal individual electrode pairing after the
+          superelectrode sweep has narrowed down the search area.
+        </p>
+        <p style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
+          <strong>Example:</strong> if Phase 2 finds electrode 7 as the best cathode, Phase 3
+          tests pairs 7–1, 7–2, 7–3, 7–4, 7–5, 7–6, 7–8, 7–9 and ranks them.
+        </p>
+
         <h3 style={{ marginTop: 16 }}>UI overview</h3>
         <ul>
-          <li><strong>Parameters panel:</strong> set amplitude range, delay, and electrode count.</li>
-          <li><strong>Progress bar:</strong> shows how many pairs have been tested out of the total.</li>
+          <li><strong>Parameters panel:</strong> set amplitude range, delay, and electrode count. Superelectrode and Superelectrode+ modes also show a Sensor Threshold field.</li>
+          <li><strong>Progress bar:</strong> shows how many pairs have been tested out of the total. Superelectrode modes show the current phase number.</li>
           <li><strong>Live status:</strong> shows which electrode pair is currently being stimulated and at what amplitude.</li>
           <li><strong>Log panel:</strong> scrollable real-time log of every test step, including effectiveness scores.</li>
           <li><strong>Best result card:</strong> after the search completes, shows the winning electrode pair, its amplitude, and effectiveness score.</li>
+          <li><strong>Phase 3 ranking table:</strong> (Superelectrode+ only) after Phase 3, shows all tested pairs ranked by effectiveness with SNR and activation status.</li>
           <li><strong>Battery indicator:</strong> click to check device battery level.</li>
         </ul>
       </section>
@@ -498,7 +528,7 @@ electrode1,electrode2,impedance
         <ul>
           <li><code>src/app/BluetoothContext.tsx</code> — Bluetooth connection, parsing, per-sample timestamps.</li>
           <li><code>src/app/NMESControl.tsx</code> — UI polling, binning/averaging, charting, recording and CSV export.</li>
-          <li><code>src/app/search/SearchAlgorithm.tsx</code> — Search Algorithm page: electrode pair search loop, firmware reset logic, effectiveness calculation, and UI.</li>
+          <li><code>src/app/search/SearchAlgorithm.tsx</code> — Search Algorithm page: regular search, superelectrode, superelectrode+ (3-phase), effectiveness calculation, and UI.</li>
           <li><code>src/app/search/SearchAlgorithm.module.css</code> — Styling for the Search Algorithm page.</li>
         </ul>
       </section>

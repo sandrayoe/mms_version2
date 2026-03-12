@@ -9,6 +9,7 @@ How to use
 Changelog
 
 ## Unreleased
+- 2026-03-12 — Added Superelectrode+ (3-phase) search mode: runs superelectrode Phase 1 & 2, then Phase 3 tests the winning electrode against all other electrodes individually and ranks results.
 - 2026-03-12 — Updated Section 9: corrected effectiveness score description (DFT-based low-frequency power, not mean squared deviation), added confidence metric formula and early stopping criteria, rewrote superelectrode section to document the 2-phase approach and sensor threshold.
 - 2026-02-26 — Updated Section 5 (CSV format) to reflect current sensor CSV header (`relative_time_s,sensor1,sensor2,...`) and added Section 5b documenting the impedance CSV format.
 - 2026-02-26 — Added Section 7: Impedance Reading documentation (basic workflow, continuous measurement, `G`/`g`/`L`/`h` commands, UI controls).

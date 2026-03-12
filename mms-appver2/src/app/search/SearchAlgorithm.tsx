@@ -12,7 +12,7 @@ import {
   determineBestPair,
 } from "./signalAnalysis";
 
-type AlgorithmTab = "regular" | "superelectrode";
+type AlgorithmTab = "regular" | "superelectrode" | "superelectrodeplus";
 
 interface LogEntry {
   time: string;
@@ -93,8 +93,11 @@ const SearchAlgorithm: React.FC = () => {
   const [sensorThreshold, setSensorThreshold] = useState<string>("50");
 
   // Superelectrode phase tracking
-  const [superPhase, setSuperPhase] = useState<1 | 2 | null>(null);
+  const [superPhase, setSuperPhase] = useState<1 | 2 | 3 | null>(null);
   const [foundAmplitude, setFoundAmplitude] = useState<number | null>(null);
+
+  // Phase 3 ranked results (superelectrode+ only)
+  const [phase3Ranking, setPhase3Ranking] = useState<SearchResult[]>([]);
 
   // Track live connection state inside async loops
   const isConnectedRef = useRef(isConnected);
@@ -784,11 +787,338 @@ const SearchAlgorithm: React.FC = () => {
     }
   };
 
+  // ─── Superelectrode+ Search Algorithm ───
+  // Runs Phase 1 + Phase 2 (identical to superelectrode), then adds Phase 3:
+  // Take the best cathode from Phase 2 and test it paired with every other
+  // individual electrode using the regular 'e' command.  Ranks all pairs by
+  // effectiveness so the user can see exactly which individual pairing is best.
+  const runSuperelectrodePlusSearch = async () => {
+    const minAmp = parseInt(minAmplitude);
+    const maxAmp = parseInt(maxAmplitude);
+    const delayS = parseFloat(delay);
+    const totalElec = parseInt(numElectrodes);
+    const threshold = parseFloat(sensorThreshold);
+
+    if ([minAmp, maxAmp, totalElec].some(isNaN) || isNaN(delayS) || isNaN(threshold)) {
+      window.alert("Please fill in all parameters with valid numbers.");
+      return;
+    }
+    if (minAmp < 0 || maxAmp > 120 || minAmp > maxAmp) {
+      window.alert("Amplitude range invalid (0-120 mA, min <= max).");
+      return;
+    }
+    if (threshold <= 0) {
+      window.alert("Sensor threshold must be a positive number.");
+      return;
+    }
+
+    const startElectrode = 4;
+    const endElectrode = totalElec;
+    const ampSteps = maxAmp - minAmp + 1;
+    const electrodeSteps = endElectrode - startElectrode + 1;
+    const phase1Max = ampSteps * electrodeSteps;
+    const phase2Total = electrodeSteps;
+    setTotalCombinations(phase1Max);
+    setElectrodesTested(0);
+
+    setIsRunning(true);
+    isRunningRef.current = true;
+    setBestResult(null);
+    setResults([]);
+    setPhase3Ranking([]);
+    setSuperPhase(1);
+    setFoundAmplitude(null);
+    const startTime = Date.now();
+    addLog(`═══ Superelectrode+ Search (3-Phase) ═══`);
+    addLog(`Grouped anode (1-3), cathode ${startElectrode}-${endElectrode}, amplitude ${minAmp}-${maxAmp} mA, delay ${delayS} ms`);
+    addLog(`Sensor threshold: ${threshold}`);
+
+    clearIMU();
+    await startIMU();
+    await delayMs(300);
+
+    let tested = 0;
+    let optimalAmplitude: number | null = null;
+    let phase2Winner: number | null = null;
+
+    try {
+      // ═══════════════════════════════════════════════
+      // PHASE 1: Amplitude Search (identical to superelectrode)
+      // ═══════════════════════════════════════════════
+      addLog(`── Phase 1: Searching for optimal amplitude (threshold: ${threshold}) ──`);
+
+      for (let amp = minAmp; amp <= maxAmp; amp++) {
+        if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
+        if (!isConnectedRef.current) { addLog("⚠ BLE disconnected — stopping search."); isRunningRef.current = false; break; }
+
+        addLog(`Phase 1: Testing amplitude ${amp} mA across all electrodes ${startElectrode}-${endElectrode}`);
+        clearIMU();
+        await delayMs(50);
+
+        for (let elec = startElectrode; elec <= endElectrode; elec++) {
+          if (!isRunningRef.current) break;
+          if (!isConnectedRef.current) { addLog("⚠ BLE disconnected — stopping search."); isRunningRef.current = false; break; }
+
+          tested++;
+          setElectrodesTested(tested);
+          setCurrentStimPair({ e1: 0, e2: elec });
+          setCurrentAmplitude(amp);
+
+          try {
+            await retryBLE(() => sendSuperelectrodeCommand(elec, amp, true), `super-on ${elec}`);
+            await pauseNode(delayS);
+            await retryBLE(() => sendSuperelectrodeCommand(elec, amp, false), `super-off ${elec}`);
+            await delayMs(200);
+          } catch (pairErr: any) {
+            if (pairErr.message === "Flow aborted") throw pairErr;
+            addLog(`  ⚠ Skipped electrode ${elec} @ ${amp} mA — ${pairErr.message || pairErr}`);
+            try { await sendSuperelectrodeCommand(elec, amp, false); } catch {}
+          }
+          setCurrentStimPair(null);
+          setCurrentAmplitude(null);
+        }
+
+        if (!isRunningRef.current) break;
+
+        addLog(`  Listening for 300 ms after stimulation at ${amp} mA…`);
+        await delayMs(300);
+
+        const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
+        const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
+        const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
+        const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
+        const { effectiveness: combinedEff } = calculateEffectiveness(s1, s2);
+        const maxRaw1 = s1.length > 0 ? Math.max(...s1.map(Math.abs)) : 0;
+        const maxRaw2 = s2.length > 0 ? Math.max(...s2.map(Math.abs)) : 0;
+        const maxRaw = Math.max(maxRaw1, maxRaw2);
+
+        addLog(`  Phase 1 @ ${amp} mA → Effectiveness: ${combinedEff.toFixed(2)}  |  Max raw: ${maxRaw.toFixed(1)}  |  Avg: ${avg1.toFixed(1)} / ${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+
+        const p1Result: SearchResult = {
+          electrode1: "A", electrode2: 0, amplitude: amp,
+          sensorAvg1: parseFloat(avg1.toFixed(2)), sensorAvg2: parseFloat(avg2.toFixed(2)),
+          effectiveness: parseFloat(combinedEff.toFixed(2)),
+          response: `P1 @ ${amp}mA | Eff: ${combinedEff.toFixed(2)} | MaxRaw: ${maxRaw.toFixed(1)}`,
+          timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+        };
+        addResult(p1Result);
+
+        if (maxRaw >= threshold) {
+          optimalAmplitude = amp;
+          setFoundAmplitude(amp);
+          addLog(`✓ Phase 1 complete: Threshold ${threshold} reached at ${amp} mA (max raw: ${maxRaw.toFixed(1)})`);
+          break;
+        }
+      }
+
+      if (optimalAmplitude === null && isRunningRef.current) {
+        optimalAmplitude = maxAmp;
+        setFoundAmplitude(maxAmp);
+        addLog(`⚠ Phase 1: Threshold ${threshold} not reached. Using max amplitude ${maxAmp} mA for Phase 2.`);
+      }
+
+      if (!isRunningRef.current || optimalAmplitude === null) {
+        addLog("Search stopped before Phase 2.");
+        await stopIMU();
+        return;
+      }
+
+      // ═══════════════════════════════════════════════
+      // PHASE 2: Pair Selection (identical to superelectrode)
+      // ═══════════════════════════════════════════════
+      setSuperPhase(2);
+      setTotalCombinations(phase2Total);
+      setElectrodesTested(0);
+      tested = 0;
+
+      addLog(`── Phase 2: Finding best electrode pair at ${optimalAmplitude} mA ──`);
+
+      type PairRecord = { electrode: number; effectiveness: number; atAmplitude: number; avg1: number; avg2: number };
+      const bestMap = new Map<number, PairRecord>();
+
+      for (let elec = startElectrode; elec <= endElectrode; elec++) {
+        if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
+        if (!isConnectedRef.current) { addLog("⚠ BLE disconnected — stopping search."); isRunningRef.current = false; break; }
+
+        tested++;
+        setElectrodesTested(tested);
+        setCurrentStimPair({ e1: 0, e2: elec });
+        setCurrentAmplitude(optimalAmplitude);
+        addLog(`[${tested}/${phase2Total}] Phase 2: (A) → ${elec} at ${optimalAmplitude} mA`);
+
+        try {
+          clearIMU();
+          await delayMs(150);
+          clearIMU();
+          await delayMs(50);
+
+          await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, true), `P2-on ${elec}`);
+          await pauseNode(delayS);
+          await retryBLE(() => sendSuperelectrodeCommand(elec, optimalAmplitude!, false), `P2-off ${elec}`);
+          await delayMs(300);
+
+          const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
+          const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
+          const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
+          const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
+          const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
+
+          addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+          clearIMU();
+
+          const result: SearchResult = {
+            electrode1: "A", electrode2: elec, amplitude: optimalAmplitude,
+            sensorAvg1: parseFloat(avg1.toFixed(2)), sensorAvg2: parseFloat(avg2.toFixed(2)),
+            effectiveness: parseFloat(effValue.toFixed(2)), snr: parseFloat(avgSnr.toFixed(2)),
+            activationDetected,
+            response: `P2 | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
+            timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+          };
+          addResult(result);
+          bestMap.set(elec, { electrode: elec, effectiveness: effValue, atAmplitude: optimalAmplitude, avg1, avg2 });
+        } catch (pairErr: any) {
+          if (pairErr.message === "Flow aborted") throw pairErr;
+          addLog(`  ⚠ Skipped electrode ${elec} @ ${optimalAmplitude} mA — ${pairErr.message || pairErr}`);
+          try { await sendSuperelectrodeCommand(elec, optimalAmplitude, false); } catch {}
+        }
+        setCurrentStimPair(null);
+        setCurrentAmplitude(null);
+      }
+
+      // Determine Phase 2 winner
+      if (bestMap.size === 0 || !isRunningRef.current) {
+        addLog("Search stopped before Phase 3 — no Phase 2 winner.");
+        await stopIMU();
+        return;
+      }
+
+      const p2Best = Array.from(bestMap.values()).reduce((a, b) =>
+        a.effectiveness > b.effectiveness ? a : b
+      );
+      phase2Winner = p2Best.electrode;
+      addLog(`✓ Phase 2 winner: (A) → ${phase2Winner} (effectiveness: ${p2Best.effectiveness.toFixed(2)})`);
+
+      // ═══════════════════════════════════════════════
+      // PHASE 3: Individual Pair Refinement
+      // Take the winning electrode from Phase 2 and test it paired with
+      // every other individual electrode (1→N, excluding itself) using
+      // the regular 'e' stimulation command. Rank all pairs by effectiveness.
+      // ═══════════════════════════════════════════════
+      setSuperPhase(3);
+      const phase3Pairs = totalElec - 1; // all electrodes except the winner
+      setTotalCombinations(phase3Pairs);
+      setElectrodesTested(0);
+      tested = 0;
+
+      addLog(`── Phase 3: Testing electrode ${phase2Winner} against all others (1-${totalElec}, skip ${phase2Winner}) at ${optimalAmplitude} mA ──`);
+
+      const phase3Results: SearchResult[] = [];
+
+      for (let other = 1; other <= totalElec; other++) {
+        if (other === phase2Winner) continue;
+        if (!isRunningRef.current) { addLog("Search stopped by user."); break; }
+        if (!isConnectedRef.current) { addLog("⚠ BLE disconnected — stopping search."); isRunningRef.current = false; break; }
+
+        tested++;
+        setElectrodesTested(tested);
+        setCurrentStimPair({ e1: phase2Winner, e2: other });
+        setCurrentAmplitude(optimalAmplitude);
+        addLog(`[${tested}/${phase3Pairs}] Phase 3: ${phase2Winner} – ${other} at ${optimalAmplitude} mA`);
+
+        try {
+          clearIMU();
+          await delayMs(150);
+          clearIMU();
+          await delayMs(50);
+
+          // Use regular stimulate() — electrode pair with the winner
+          await retryBLE(() => stimulate(phase2Winner!, other, optimalAmplitude!, true), `P3-on ${phase2Winner}-${other}`);
+          await pauseNode(delayS);
+          await retryBLE(() => stimulate(phase2Winner!, other, optimalAmplitude!, false), `P3-off ${phase2Winner}-${other}`);
+          await delayMs(300);
+
+          const s1 = imuDataRef.current.imu1_changes.map((s) => s.value);
+          const s2 = imuDataRef.current.imu2_changes.map((s) => s.value);
+          const avg1 = s1.length > 0 ? s1.reduce((a, b) => a + b, 0) / s1.length : 0;
+          const avg2 = s2.length > 0 ? s2.reduce((a, b) => a + b, 0) / s2.length : 0;
+          const { effectiveness: effValue, avgSnr, activationDetected } = calculateEffectiveness(s1, s2);
+
+          addLog(`  → Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  Active: ${activationDetected ? "YES" : "no"}  Avg: ${avg1.toFixed(1)}/${avg2.toFixed(1)}  (${s1.length}+${s2.length} samples)`);
+          clearIMU();
+
+          const result: SearchResult = {
+            electrode1: phase2Winner, electrode2: other, amplitude: optimalAmplitude,
+            sensorAvg1: parseFloat(avg1.toFixed(2)), sensorAvg2: parseFloat(avg2.toFixed(2)),
+            effectiveness: parseFloat(effValue.toFixed(2)), snr: parseFloat(avgSnr.toFixed(2)),
+            activationDetected,
+            response: `P3 | Eff: ${effValue.toFixed(2)}  SNR: ${avgSnr.toFixed(1)}dB  ${activationDetected ? "✓" : "–"}`,
+            timestamp: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+          };
+          addResult(result);
+          phase3Results.push(result);
+        } catch (pairErr: any) {
+          if (pairErr.message === "Flow aborted") throw pairErr;
+          addLog(`  ⚠ Skipped pair ${phase2Winner}-${other} @ ${optimalAmplitude} mA — ${pairErr.message || pairErr}`);
+          try { await stimulate(phase2Winner, other, optimalAmplitude, false); } catch {}
+        }
+        setCurrentStimPair(null);
+        setCurrentAmplitude(null);
+      }
+
+      // Rank Phase 3 results by effectiveness (descending)
+      const ranked = [...phase3Results].sort((a, b) => b.effectiveness - a.effectiveness);
+      setPhase3Ranking(ranked);
+
+      if (ranked.length > 0) {
+        addLog(`── Phase 3 Ranking ──`);
+        ranked.forEach((r, i) => {
+          addLog(`  #${i + 1}: ${r.electrode1}–${r.electrode2}  Eff: ${r.effectiveness}  SNR: ${r.snr ?? "–"}dB  ${r.activationDetected ? "✓" : "–"}`);
+        });
+
+        const best = ranked[0];
+        const elapsedMs = Date.now() - startTime;
+        const mins = Math.floor(elapsedMs / 60000);
+        const secs = Math.floor((elapsedMs % 60000) / 1000);
+        const duration = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        setBestResult({
+          electrode1: best.electrode1,
+          electrode2: best.electrode2,
+          amplitude: best.amplitude,
+          sensorAvg1: best.sensorAvg1,
+          sensorAvg2: best.sensorAvg2,
+          effectiveness: best.effectiveness,
+          snr: best.snr,
+          activationDetected: best.activationDetected,
+          response: `Effectiveness: ${best.effectiveness}`,
+          timestamp: duration,
+        });
+        addLog(`✓ Best pair: ${best.electrode1}–${best.electrode2} at ${best.amplitude} mA (effectiveness: ${best.effectiveness}) — completed in ${duration}`);
+      }
+
+      addLog("Superelectrode+ Search completed.");
+      await stopIMU();
+    } catch (err: any) {
+      addLog(`Error: ${err.message || err}`);
+      try {
+        await emergencyStop();
+        addLog("Emergency stop sent.");
+      } catch {}
+    } finally {
+      setIsRunning(false);
+      isRunningRef.current = false;
+      setCurrentStimPair(null);
+      setCurrentAmplitude(null);
+      setSuperPhase(null);
+    }
+  };
+
   const handleStart = () => {
     if (activeTab === "regular") {
       runRegularSearch();
-    } else {
+    } else if (activeTab === "superelectrode") {
       runSuperelectrodeSearch();
+    } else {
+      runSuperelectrodePlusSearch();
     }
   };
 
@@ -858,7 +1188,14 @@ const SearchAlgorithm: React.FC = () => {
           onClick={() => !isRunning && setActiveTab("superelectrode")}
           disabled={isRunning}
         >
-          Superelectrode Algorithm
+          Superelectrode
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === "superelectrodeplus" ? styles.tabActive : ""}`}
+          onClick={() => !isRunning && setActiveTab("superelectrodeplus")}
+          disabled={isRunning}
+        >
+          Superelectrode+
         </button>
       </div>
 
@@ -914,7 +1251,7 @@ const SearchAlgorithm: React.FC = () => {
               disabled={isRunning}
             />
           </label>
-          {activeTab === "superelectrode" && (
+          {(activeTab === "superelectrode" || activeTab === "superelectrodeplus") && (
             <label className={styles.inputLabel}>
               <span className={styles.labelRow}>Sensor Threshold:</span>
               <input
@@ -933,11 +1270,13 @@ const SearchAlgorithm: React.FC = () => {
 
       {/* Algorithm Description & Controls */}
       <div className={styles.algorithmSection}>
-        <h3>{activeTab === "regular" ? "Regular Search" : "Superelectrode Algorithm"}</h3>
+        <h3>{activeTab === "regular" ? "Regular Search" : activeTab === "superelectrode" ? "Superelectrode Algorithm" : "Superelectrode+ Algorithm"}</h3>
         <p className={styles.algorithmDescription}>
           {activeTab === "regular"
             ? "Loops through every electrode pair combination at each amplitude. For each test: starts sensors → stimulates → collects data → stops → analyses sensor response. Finds the best pair with the highest sensor response."
-            : "Two-phase search: Phase 1 sweeps amplitudes from min→max, stimulating all electrodes 4→X at each level and checking if the combined sensor response meets the threshold. Phase 2 uses the found amplitude to test each electrode individually and determine the best pair."}
+            : activeTab === "superelectrode"
+            ? "Two-phase search: Phase 1 sweeps amplitudes from min→max, stimulating all electrodes 4→X at each level and checking if the combined sensor response meets the threshold. Phase 2 uses the found amplitude to test each electrode individually and determine the best pair."
+            : "Three-phase search: Phase 1 & 2 are identical to Superelectrode (find amplitude, then find best cathode). Phase 3 takes the winning electrode and tests it paired with every other individual electrode using regular stimulation, ranking all pairs by effectiveness."}
         </p>
 
         <div className={styles.statusBar}>
@@ -951,7 +1290,7 @@ const SearchAlgorithm: React.FC = () => {
           )}
           {isRunning && totalCombinations > 0 && (
             <span style={{ marginLeft: 16, color: "#999" }}>
-              {activeTab === "superelectrode" && superPhase ? `Phase ${superPhase} — ` : ""}
+              {(activeTab === "superelectrode" || activeTab === "superelectrodeplus") && superPhase ? `Phase ${superPhase} — ` : ""}
               Progress: {electrodesTested}/{totalCombinations} ({Math.round((electrodesTested / totalCombinations) * 100)}%)
               {foundAmplitude !== null && ` | Found amp: ${foundAmplitude} mA`}
             </span>
@@ -973,7 +1312,7 @@ const SearchAlgorithm: React.FC = () => {
 
         <div className={styles.buttonContainer}>
           <button className={styles.button} onClick={handleStart} disabled={!isConnected || isRunning}>
-            {activeTab === "regular" ? "Run Regular Search" : "Run Superelectrode Search"}
+            {activeTab === "regular" ? "Run Regular Search" : activeTab === "superelectrode" ? "Run Superelectrode Search" : "Run Superelectrode+ Search"}
           </button>
           <button
             className={`${styles.button} ${isRunning ? styles.runningButton : ""}`}
@@ -1042,6 +1381,35 @@ const SearchAlgorithm: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Phase 3 Ranking (Superelectrode+ only) */}
+      {activeTab === "superelectrodeplus" && phase3Ranking.length > 0 && (
+        <div className={styles.resultsCard}>
+          <h3>Phase 3 — Individual Pair Ranking</h3>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, marginTop: 8 }}>
+            <thead>
+              <tr style={{ background: "#222", color: "#ccc" }}>
+                <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid #444" }}>#</th>
+                <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid #444" }}>Pair</th>
+                <th style={{ padding: "6px 10px", textAlign: "right", borderBottom: "1px solid #444" }}>Effectiveness</th>
+                <th style={{ padding: "6px 10px", textAlign: "right", borderBottom: "1px solid #444" }}>SNR (dB)</th>
+                <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "1px solid #444" }}>Activation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {phase3Ranking.map((r, i) => (
+                <tr key={i} style={{ background: i === 0 ? "#1b3a1b" : i % 2 === 0 ? "#1a1a2e" : "transparent" }}>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", fontWeight: i === 0 ? 700 : 400 }}>{r.electrode1} – {r.electrode2}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", textAlign: "right" }}>{r.effectiveness}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", textAlign: "right" }}>{r.snr ?? "–"}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", textAlign: "center" }}>{r.activationDetected ? "✓" : "–"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };
