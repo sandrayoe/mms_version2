@@ -1373,12 +1373,6 @@ const SearchAlgorithm: React.FC = () => {
                 <span className={styles.bestResultLabel}>Effectiveness</span>
                 <span className={styles.bestResultValue}>{bestResult.effectiveness}</span>
               </div>
-              {bestResult.response && (
-                <div>
-                  <span className={styles.bestResultLabel}>{bestResult.response.startsWith("Confidence") ? "Confidence Metric" : "Details"}</span>
-                  <span className={styles.bestResultValue}>{bestResult.response}</span>
-                </div>
-              )}
               <div>
                 <span className={styles.bestResultLabel}>Duration</span>
                 <span className={styles.bestResultValue}>{bestResult.timestamp}</span>
@@ -1404,7 +1398,7 @@ const SearchAlgorithm: React.FC = () => {
             </thead>
             <tbody>
               {phase3Ranking.map((r, i) => (
-                <tr key={i} style={{ background: i === 0 ? "#6b3a3a" : i % 2 === 0 ? "#33334d" : "transparent" }}>
+                <tr key={i} style={{ background: i === 0 ? "#6b3a3a" : "transparent" }}>
                   <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</td>
                   <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", fontWeight: i === 0 ? 700 : 400 }}>{r.electrode1} – {r.electrode2}</td>
                   <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", textAlign: "right" }}>{r.effectiveness}</td>
