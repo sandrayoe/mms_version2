@@ -1394,22 +1394,22 @@ const SearchAlgorithm: React.FC = () => {
           <h3>Phase 3 — Individual Pair Ranking</h3>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, marginTop: 8 }}>
             <thead>
-              <tr style={{ background: "#222", color: "#ccc" }}>
-                <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid #444" }}>#</th>
-                <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid #444" }}>Pair</th>
-                <th style={{ padding: "6px 10px", textAlign: "right", borderBottom: "1px solid #444" }}>Effectiveness</th>
-                <th style={{ padding: "6px 10px", textAlign: "right", borderBottom: "1px solid #444" }}>SNR (dB)</th>
-                <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "1px solid #444" }}>Activation</th>
+              <tr style={{ background: "#383850", color: "#eee" }}>
+                <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid #666" }}>#</th>
+                <th style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid #666" }}>Pair</th>
+                <th style={{ padding: "6px 10px", textAlign: "right", borderBottom: "1px solid #666" }}>Effectiveness</th>
+                <th style={{ padding: "6px 10px", textAlign: "right", borderBottom: "1px solid #666" }}>SNR (dB)</th>
+                <th style={{ padding: "6px 10px", textAlign: "center", borderBottom: "1px solid #666" }}>Activation</th>
               </tr>
             </thead>
             <tbody>
               {phase3Ranking.map((r, i) => (
-                <tr key={i} style={{ background: i === 0 ? "#3a1b1b" : i % 2 === 0 ? "#1a1a2e" : "transparent" }}>
-                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</td>
-                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", fontWeight: i === 0 ? 700 : 400 }}>{r.electrode1} – {r.electrode2}</td>
-                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", textAlign: "right" }}>{r.effectiveness}</td>
-                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", textAlign: "right" }}>{r.snr ?? "–"}</td>
-                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #333", textAlign: "center" }}>{r.activationDetected ? "✓" : "–"}</td>
+                <tr key={i} style={{ background: i === 0 ? "#6b3a3a" : i % 2 === 0 ? "#33334d" : "transparent" }}>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", fontWeight: i === 0 ? 700 : 400 }}>{i + 1}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", fontWeight: i === 0 ? 700 : 400 }}>{r.electrode1} – {r.electrode2}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", textAlign: "right" }}>{r.effectiveness}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", textAlign: "right" }}>{r.snr ?? "–"}</td>
+                  <td style={{ padding: "5px 10px", borderBottom: "1px solid #555", textAlign: "center" }}>{r.activationDetected ? "✓" : "–"}</td>
                 </tr>
               ))}
             </tbody>
