@@ -279,18 +279,20 @@ electrode1,electrode2,impedance
           <li>
             <strong>For each pair, the app</strong>:
             <ol type="a" style={{ marginTop: 4, marginLeft: 16 }}>
-              <li>Clears any old sensor data</li>
+              <li>Clears any old sensor data (double-clear with a short settle window to flush in-flight BLE data)</li>
               <li>Sends a &quot;start stimulation&quot; command to the device</li>
               <li>Waits for the delay period while the sensors record muscle movement</li>
               <li>Sends a &quot;stop stimulation&quot; command</li>
-              <li>Looks at the sensor readings and calculates an <em>effectiveness score</em>
-                (how much the sensor values deviated from rest — bigger = stronger response)</li>
+              <li>Waits an additional 300&nbsp;ms post-stimulation listening window to capture the muscle response</li>
+              <li>Analyses the sensor readings using DFT-based low-frequency power to calculate
+                an <em>effectiveness score</em> and checks for muscle activation</li>
+              <li>Updates the confidence tracker and checks for early stopping (see below)</li>
             </ol>
           </li>
           <li>
-            <strong>At the end</strong>, the app shows which pair produced the highest
-            effectiveness score, along with the amplitude that worked best. This is the
-            recommended motor point.
+            <strong>At the end</strong> (or on early stop), the app shows which pair produced
+            the highest confidence or effectiveness score, along with the amplitude that
+            worked best. This is the recommended motor point.
           </li>
         </ol>
 
@@ -321,26 +323,77 @@ electrode1,electrode2,impedance
           0x0A, not the characters &quot;1&quot; and &quot;0&quot;.
         </p>
 
-        <h3 style={{ marginTop: 16 }}>Firmware reset (every 25 pairs)</h3>
-        <p>
-          The device firmware has an internal limit and stops responding to stimulation
-          commands after approximately 36 consecutive pairs. To work around this, the search
-          automatically performs a reset every 25 pairs:
-        </p>
-        <ol>
-          <li>Sends a stop-stimulation command (all zeros)</li>
-          <li>Stops the motion sensors</li>
-          <li>Sends the <code>N</code> command to reset the firmware</li>
-          <li>Waits 500 ms for the device to settle</li>
-          <li>Restarts the motion sensors and continues testing</li>
-        </ol>
-
         <h3 style={{ marginTop: 16 }}>Effectiveness score</h3>
         <p>
-          The effectiveness score is the <em>mean squared deviation from idle</em>. In simple
-          terms: the app looks at all the sensor readings collected during a pulse and measures
-          how far each reading is from the resting value. Larger deviations = the muscle moved
-          more = better electrode placement. Both sensors are averaged together.
+          The effectiveness score is based on <strong>DFT (Discrete Fourier Transform) low-frequency
+          power analysis</strong>, not a simple mean or deviation. The algorithm:
+        </p>
+        <ol>
+          <li>Detrends the sensor signal (subtracts the mean to remove DC offset).</li>
+          <li>Computes a DFT of the detrended signal.</li>
+          <li>Builds a single-sided magnitude spectrum.</li>
+          <li>Sums the squared magnitudes of all frequency bins from 0 to 3&nbsp;Hz (the muscle
+            contraction range). This gives the <em>low-frequency power</em> for one sensor.</li>
+          <li>Averages the low-frequency power from both sensors to produce the final
+            effectiveness value.</li>
+        </ol>
+        <p>
+          In practical terms: a higher effectiveness means more energy was detected in the
+          0–3&nbsp;Hz band — the frequency range where real muscle contractions occur — while
+          filtering out high-frequency noise and stimulation artefacts. Both sensors are
+          averaged together.
+        </p>
+        <p style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
+          <strong>Implementation:</strong> see <code>calculateEffectiveness()</code> and
+          <code>calculateLowFreqPower()</code> in <code>src/app/search/signalAnalysis.ts</code>.
+          Constants: sampling rate = 50&nbsp;Hz, cutoff = 3&nbsp;Hz, activation threshold = 10.
+        </p>
+
+        <h3 style={{ marginTop: 16 }}>Confidence metric &amp; early stopping</h3>
+        <p>
+          During the regular search, the algorithm tracks a <strong>confidence metric</strong> for
+          each electrode pair. This metric determines whether the search can stop early
+          instead of exhaustively testing every combination.
+        </p>
+        <h4 style={{ marginTop: 12 }}>How the confidence metric is calculated</h4>
+        <p>
+          Each pair accumulates statistics across all amplitude levels tested: total SNR,
+          total effectiveness, number of muscle activations, and consecutive activations.
+          The per-pair confidence metric is a weighted combination:
+        </p>
+        <pre style={{ background: '#f6f8fa', padding: 12, borderRadius: 6, fontSize: 13, overflowX: 'auto' }}>
+{`confidence = 0.2 × snrConfidence
+           + 0.6 × effectivenessConfidence
+           + 0.2 × pairActivationRate`}
+        </pre>
+        <p>Where:</p>
+        <ul>
+          <li><strong>snrConfidence</strong> — this pair&apos;s total SNR divided by the global total
+            SNR across all pairs (i.e. the pair&apos;s share of all measured signal quality).</li>
+          <li><strong>effectivenessConfidence</strong> — this pair&apos;s total effectiveness divided
+            by the global total, <em>boosted</em> when consecutive muscle activations are
+            detected (multiplied by activation rate and streak length).</li>
+          <li><strong>pairActivationRate</strong> — the fraction of this pair&apos;s tests that
+            triggered a muscle activation (activations / total tests for this pair).</li>
+        </ul>
+        <p>
+          The metric is recalculated for all pairs after every single test, so values shift
+          as more data comes in.
+        </p>
+        <h4 style={{ marginTop: 12 }}>Early stopping criteria</h4>
+        <p>The search terminates early if any pair meets <strong>either</strong> condition:</p>
+        <ul>
+          <li>Confidence &gt; <strong>0.6</strong> AND at least <strong>2</strong> muscle activations detected, <em>or</em></li>
+          <li>Confidence &ge; <strong>0.9</strong> AND tested at least as many times as there are unique pair combinations.</li>
+        </ul>
+        <p>
+          If neither condition is met by the end, the pair with the highest raw effectiveness
+          is selected as the best result.
+        </p>
+        <p style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
+          <strong>Implementation:</strong> see <code>calculateConfidenceMetric()</code>,
+          <code>determinePotentiallyBestPairs()</code> (threshold: 0.25), and
+          <code>determineBestPair()</code> in <code>src/app/search/signalAnalysis.ts</code>.
         </p>
 
         <h3 style={{ marginTop: 16 }}>Safety features</h3>
@@ -363,27 +416,37 @@ electrode1,electrode2,impedance
           the regular pairwise search.
         </p>
 
-        <h4 style={{ marginTop: 12 }}>How it works</h4>
+        <h4 style={{ marginTop: 12 }}>How it works (2-phase approach)</h4>
+        <p>
+          Unlike the regular search, the superelectrode search runs in <strong>two distinct
+          phases</strong>. An additional parameter, <strong>Sensor Threshold</strong>
+          (default: 50), controls when Phase 1 ends.
+        </p>
         <ol>
           <li>
-            <strong>Grouped anode</strong> — electrodes 1, 2, and 3 are activated together
-            as one combined positive pole. The user does not select these individually.
+            <strong>Phase 1 — Amplitude Search:</strong> sweeps amplitudes from min to max.
+            At each amplitude, <em>all</em> cathode electrodes (4 → N) are stimulated in
+            sequence while sensor data is collected continuously. After stimulating all
+            electrodes at one amplitude, the maximum raw sensor value is compared against the
+            sensor threshold. If the max raw value meets or exceeds the threshold, this
+            amplitude is locked in and Phase 2 begins. If no amplitude reaches the threshold,
+            the max amplitude is used with a warning.
           </li>
           <li>
-            <strong>Cathode sweep</strong> — the algorithm loops through each cathode
-            electrode from 4 to <em>N</em> (the total electrode count set in Parameters)
-            at every amplitude in the configured range.
-          </li>
-          <li>
-            <strong>For each cathode electrode</strong>, the same sensor-based test cycle
-            is performed as in the regular search: clear sensors → start stimulation → wait
-            (delay) → stop stimulation → calculate effectiveness score.
-          </li>
-          <li>
-            <strong>At the end</strong>, the best cathode electrode is reported along with
-            the amplitude that produced the highest effectiveness score.
+            <strong>Phase 2 — Electrode Comparison:</strong> using the amplitude found in
+            Phase 1, each cathode electrode (4 → N) is stimulated individually with the
+            standard test cycle: clear sensors → start stimulation → wait (delay) → stop
+            stimulation → calculate effectiveness score. The electrode with the highest
+            DFT-based effectiveness wins.
           </li>
         </ol>
+        <p style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
+          <strong>Note:</strong> Phase 1 uses the <em>max raw sensor value</em> (not the
+          DFT effectiveness) to decide when the amplitude is sufficient. Phase 2 then uses
+          the full DFT-based effectiveness score to compare individual electrodes.
+          The superelectrode search does not use the confidence-based early stopping from
+          the regular search.
+        </p>
 
         <h4 style={{ marginTop: 12 }}>Superelectrode command format (&apos;F&apos; command)</h4>
         <p>
@@ -442,7 +505,7 @@ electrode1,electrode2,impedance
 
       <div style={{ height: 28 }} />
       <div style={{ fontSize: 13, color: '#666' }}>
-        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 26 Feb 2026.
+        Page source: <code>mms-appver2/src/app/docs/page.tsx</code> // last edited 12 Mar 2026.
       </div>
     </div>
   );
