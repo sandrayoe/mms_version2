@@ -86,11 +86,11 @@ const SearchAlgorithm: React.FC = () => {
   // Shared parameters
   const [minAmplitude, setMinAmplitude] = useState<string>("10");
   const [maxAmplitude, setMaxAmplitude] = useState<string>("15");
-  const [delay, setDelay] = useState<string>("500");
+  const [delay, setDelay] = useState<string>("400");
   const [numElectrodes, setNumElectrodes] = useState<string>("9");
 
   // Superelectrode Phase 1 threshold (raw sensor effectiveness value)
-  const [sensorThreshold, setSensorThreshold] = useState<string>("20");
+  const [sensorThreshold, setSensorThreshold] = useState<string>("50");
 
   // Superelectrode phase tracking
   const [superPhase, setSuperPhase] = useState<1 | 2 | null>(null);
