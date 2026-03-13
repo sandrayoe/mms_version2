@@ -88,6 +88,10 @@ const SensorPanel: React.FC = () => {
   // Parameter snapshots recorded at times so CSV rows can reflect values that change mid-recording
   const paramSnapshotsRef = useRef<Array<{ time: number; params: Record<string, string> }>>([]);
 
+  // Stimulation snapshots: track electrode pair and amplitude changes over time during recording
+  type StimSnapshot = { time: number; electrode1: string; electrode2: string; amplitude: string };
+  const stimSnapshotsRef = useRef<StimSnapshot[]>([]);
+
   // CSV helper to escape fields that may contain commas/quotes/newlines (component scope)
   const escapeCSV = (v: any) => {
     if (v === null || v === undefined) return "";
@@ -416,6 +420,7 @@ const SensorPanel: React.FC = () => {
   // Recording controls
   const handleStartRecording = () => {
     recordedRef.current = { sensor1: [], sensor2: [] };
+    stimSnapshotsRef.current = [];
     setIsRecording(true);
     setIsPausedRecording(false);
     // add a start marker at the current chart time (fallback to 0)
@@ -464,6 +469,24 @@ const SensorPanel: React.FC = () => {
     
     const newState = !isStimulating;
     setIsStimulating(newState);
+
+    // Record stimulation snapshot for CSV if recording is active
+    if (isRecording) {
+      let latestTime = 0;
+      const rec1 = recordedRef.current.sensor1;
+      const rec2 = recordedRef.current.sensor2;
+      if (rec1 && rec1.length) latestTime = rec1[rec1.length - 1].time;
+      else if (rec2 && rec2.length) latestTime = rec2[rec2.length - 1].time;
+      else if (sensor1Data.length) latestTime = sensor1Data[sensor1Data.length - 1].time;
+      else if (sensor2Data.length) latestTime = sensor2Data[sensor2Data.length - 1].time;
+
+      if (newState) {
+        stimSnapshotsRef.current.push({ time: latestTime, electrode1: String(e1), electrode2: String(e2), amplitude: String(amp) });
+      } else {
+        stimSnapshotsRef.current.push({ time: latestTime, electrode1: '', electrode2: '', amplitude: '' });
+      }
+    }
+
     // Electrode numbers are 1-based, matching firmware expectation (1-32)
     await stimulate(e1, e2, amp, newState);
   };
@@ -645,15 +668,29 @@ const SensorPanel: React.FC = () => {
     const map1 = new Map(s1.map((p) => [p.time, p.sensorValue] as [number, number]));
     const map2 = new Map(s2.map((p) => [p.time, p.sensorValue] as [number, number]));
 
-  // Build header
-  let csv = ['time_utc','sensor1','sensor2'].join(',') + '\n';
+  // Build header (includes stimulation electrode & amplitude columns)
+  let csv = ['time_utc','sensor1','sensor2','stim_electrode1','stim_electrode2','stim_amplitude'].join(',') + '\n';
+
+    // Helper: find the active stimulation snapshot for a given time
+    const stimSnaps = stimSnapshotsRef.current;
+    const getStimAt = (t: number): { electrode1: string; electrode2: string; amplitude: string } => {
+      let snap = { electrode1: '', electrode2: '', amplitude: '' };
+      for (let i = stimSnaps.length - 1; i >= 0; i--) {
+        if (stimSnaps[i].time <= t) {
+          snap = stimSnaps[i];
+          break;
+        }
+      }
+      return snap;
+    };
 
     const wallClockStart = sessionWallClockStartRef.current ?? Date.now();
     for (const t of times) {
       const utcDate = new Date(wallClockStart + t * 1000);
       const v1 = map1.has(t) ? String(map1.get(t)) : '';
       const v2 = map2.has(t) ? String(map2.get(t)) : '';
-      const rowFields = [escapeCSV(utcDate.toISOString()), escapeCSV(v1), escapeCSV(v2)];
+      const stim = getStimAt(t);
+      const rowFields = [escapeCSV(utcDate.toISOString()), escapeCSV(v1), escapeCSV(v2), escapeCSV(stim.electrode1), escapeCSV(stim.electrode2), escapeCSV(stim.amplitude)];
       csv += rowFields.join(',') + '\n';
     }
 
